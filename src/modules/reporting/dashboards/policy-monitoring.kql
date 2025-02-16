@@ -1,0 +1,84 @@
+// Policy Effectiveness Overview
+let PolicyMetrics = SigninLogs
+| where TimeGenerated > ago(30d)
+| where ConditionalAccessStatus != "notApplied"
+| summarize
+    TotalAttempts = count(),
+    SuccessfulSignIns = countif(ResultType == 0),
+    FailedSignIns = countif(ResultType != 0),
+    UniqueUsers = dcount(UserPrincipalName),
+    MFAChallenges = countif(AuthenticationRequirement == "multiFactorAuthentication")
+by bin(TimeGenerated, 1d);
+
+// Policy Impact Analysis
+let PolicyImpact = SigninLogs
+| where TimeGenerated > ago(30d)
+| extend PolicyNames = parse_json(ConditionalAccessPolicies)
+| mv-expand PolicyNames
+| extend PolicyName = PolicyNames.displayName
+| summarize
+    TotalApplications = count(),
+    BlockedAccess = countif(ResultType != 0),
+    RequiredMFA = countif(AuthenticationRequirement == "multiFactorAuthentication")
+by PolicyName;
+
+// Risk Analysis
+let RiskEvents = AADRiskyUsers
+| where TimeGenerated > ago(30d)
+| join kind=inner (
+    SigninLogs
+    | where TimeGenerated > ago(30d)
+    | where ConditionalAccessStatus != "notApplied"
+) on $left.UserPrincipalName == $right.UserPrincipalName
+| summarize
+    RiskySignIns = count(),
+    BlockedRiskySignIns = countif(ResultType != 0)
+by RiskLevel, bin(TimeGenerated, 1d);
+
+// Compliance Dashboard
+let ComplianceMetrics = SecurityEvent
+| where TimeGenerated > ago(30d)
+| where EventID in ("4624", "4625")
+| extend IsCompliant = case(
+    EventID == "4624", true,
+    EventID == "4625", false,
+    false
+)
+| summarize
+    TotalEvents = count(),
+    CompliantEvents = countif(IsCompliant == true),
+    NonCompliantEvents = countif(IsCompliant == false)
+by bin(TimeGenerated, 1d);
+
+// Alert Generation
+let AlertThresholds = datatable(MetricName:string, Threshold:double) [
+    "FailureRate", 0.1,
+    "RiskySignIns", 0.05,
+    "NonCompliance", 0.15
+];
+
+let Alerts = PolicyMetrics
+| extend FailureRate = FailedSignIns * 1.0 / TotalAttempts
+| where FailureRate > toscalar(
+    AlertThresholds
+    | where MetricName == "FailureRate"
+    | project Threshold
+)
+| project
+    TimeGenerated,
+    AlertType = "HighFailureRate",
+    Metric = FailureRate,
+    Threshold = toscalar(
+        AlertThresholds
+        | where MetricName == "FailureRate"
+        | project Threshold
+    );
+
+// Export Results
+union
+    (PolicyMetrics | project TimeGenerated, Type="Metrics", Metrics=pack_all()),
+    (PolicyImpact | project Type="Impact", Impact=pack_all()),
+    (RiskEvents | project TimeGenerated, Type="Risk", Risk=pack_all()),
+    (ComplianceMetrics | project TimeGenerated, Type="Compliance", Compliance=pack_all()),
+    (Alerts | project TimeGenerated, Type="Alerts", Alert=pack_all())
+| order by TimeGenerated desc

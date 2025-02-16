@@ -1,0 +1,36 @@
+# Azure credentials
+*.publishsettings
+*.azureauth
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+
+# PowerShell
+*.ps1.credential
+*.pfx
+*.pem
+
+# Environment files
+.env
+.env.*
+
+# IDE specific files
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+logs/
+*.log
+
+# Test results
+TestResults/
+coverage/
+
+# Build outputs
+dist/
+build/

@@ -1,0 +1,35 @@
+{
+    "policies": [
+        {
+            "displayName": "Require MFA for all users",
+            "state": "enabled",
+            "conditions": {
+                "users": {
+                    "includeUsers": ["All"],
+                    "excludeUsers": ["emergency-access@domain.com"]
+                },
+                "applications": {
+                    "includeApplications": ["All"]
+                }
+            },
+            "grantControls": {
+                "operator": "AND",
+                "builtInControls": ["mfa"]
+            }
+        },
+        {
+            "displayName": "Block legacy authentication",
+            "state": "enabled",
+            "conditions": {
+                "clientAppTypes": ["other"],
+                "users": {
+                    "includeUsers": ["All"]
+                }
+            },
+            "grantControls": {
+                "operator": "OR",
+                "builtInControls": ["block"]
+            }
+        }
+    ]
+}

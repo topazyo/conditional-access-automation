@@ -1,0 +1,66 @@
+# compliance-report.yaml
+# Comprehensive compliance reporting template
+
+report:
+  title: "Conditional Access Compliance Report"
+  frequency: "weekly"
+  distribution:
+    - "security-team@company.com"
+    - "compliance-team@company.com"
+
+sections:
+  - name: "Policy Overview"
+    metrics:
+      - totalPolicies
+      - activePolicies
+      - disabledPolicies
+      - modifiedLast30Days
+
+  - name: "Compliance Status"
+    frameworks:
+      - name: "ISO27001"
+        controls:
+          - id: "A.9.4.1"
+            status: "compliant/non-compliant"
+            evidence: "policy-mapping"
+      - name: "NIST800-53"
+        controls:
+          - id: "AC-2"
+            status: "compliant/non-compliant"
+            evidence: "policy-mapping"
+
+  - name: "Risk Assessment"
+    metrics:
+      - highRiskPolicies
+      - policyConflicts
+      - userExclusions
+      - emergencyOverrides
+
+  - name: "Operational Metrics"
+    timeRange: "last-30-days"
+    metrics:
+      - signInSuccess
+      - signInFailure
+      - mfaChallenges
+      - deviceCompliance
+
+visualizations:
+  - type: "trendLine"
+    metric: "policyEffectiveness"
+    timeRange: "90-days"
+    
+  - type: "pieChart"
+    metric: "complianceStatus"
+    breakdown: "byFramework"
+    
+  - type: "barChart"
+    metric: "riskDistribution"
+    categories: ["high", "medium", "low"]
+
+recommendations:
+  include:
+    - policyOptimization
+    - securityGaps
+    - complianceImprovement
+  maxItems: 5
+  priority: "high"

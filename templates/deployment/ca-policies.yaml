@@ -1,0 +1,68 @@
+policies:
+  - name: "Base Security Policy"
+    state: "enabled"
+    conditions:
+      users:
+        includeUsers: ["All"]
+        excludeUsers: ["emergency-access@domain.com"]
+      applications:
+        includeApplications: ["All"]
+      platforms:
+        includePlatforms: ["all"]
+      locations:
+        includeLocations: ["All"]
+    grantControls:
+      operator: "AND"
+      builtInControls: ["mfa"]
+
+  - name: "High-Risk User Policy"
+    state: "enabled"
+    conditions:
+      users:
+        includeGroups: ["high-risk-users"]
+      applications:
+        includeApplications: ["All"]
+      userRiskLevels: ["high"]
+    grantControls:
+      operator: "AND"
+      builtInControls: ["mfa", "passwordChange"]
+
+  - name: "Guest Access Policy"
+    state: "enabled"
+    conditions:
+      users:
+        includeUsers: ["GuestOrExternalUser"]
+      applications:
+        includeApplications: ["All"]
+      platforms:
+        includePlatforms: ["all"]
+    grantControls:
+      operator: "AND"
+      builtInControls: ["mfa", "compliantDevice"]
+
+monitoring:
+  logAnalytics:
+    workspaceId: "${LOG_ANALYTICS_WORKSPACE_ID}"
+    retentionDays: 90
+  alerts:
+    - name: "Policy Change Alert"
+      description: "Alert on any CA policy modifications"
+      severity: "High"
+      threshold: 1
+      evaluationFrequency: "PT5M"
+    - name: "High Failure Rate Alert"
+      description: "Alert when policy failure rate exceeds threshold"
+      severity: "Medium"
+      threshold: 0.1
+      evaluationFrequency: "PT15M"
+
+compliance:
+  frameworks:
+    - name: "ISO27001"
+      controls:
+        - id: "A.9.4.1"
+          policies: ["Base Security Policy", "High-Risk User Policy"]
+    - name: "NIST800-53"
+      controls:
+        - id: "AC-2"
+          policies: ["Guest Access Policy"]

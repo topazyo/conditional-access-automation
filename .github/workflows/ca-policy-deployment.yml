@@ -1,0 +1,86 @@
+name: CA Policy Deployment
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'templates/**'
+      - '.github/workflows/ca-policy-deployment.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Install PowerShell modules
+        shell: pwsh
+        run: |
+          Install-Module Microsoft.Graph -Force
+          Install-Module Pester -Force
+          
+      - name: Run Policy Validation
+        shell: pwsh
+        run: |
+          Import-Module ./src/modules/policy-management/policy_manager.ps1
+          $policies = Get-Content ./templates/deployment/ca-policies.yaml | ConvertFrom-Yaml
+          $validator = [PolicyValidator]::new($env:TENANT_ID)
+          $validation = $validator.ValidatePolicies($policies)
+          
+          if ($validation.HasErrors) {
+            throw "Policy validation failed: $($validation.Errors -join '; ')"
+          }
+
+  test:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Run Integration Tests
+        shell: pwsh
+        run: |
+          $testParams = @{
+            TenantId = $env:TENANT_ID
+            TestEnvironment = 'staging'
+          }
+          Invoke-Pester ./tests/integration/PolicyIntegration.Tests.ps1 -PassThru
+
+  deploy-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Deploy to Staging
+        shell: pwsh
+        run: |
+          ./scripts/deployment/deploy.ps1 `
+            -TenantId $env:TENANT_ID `
+            -Environment staging `
+            -ConfigPath ./templates/deployment/ca-policies.yaml
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Deploy to Production
+        shell: pwsh
+        run: |
+          ./scripts/deployment/deploy.ps1 `
+            -TenantId $env:TENANT_ID `
+            -Environment production `
+            -ConfigPath ./templates/deployment/ca-policies.yaml

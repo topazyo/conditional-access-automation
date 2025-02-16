@@ -1,0 +1,63 @@
+# security-baseline.yaml
+# Enterprise security baseline CA policies
+
+policies:
+  - name: "SEC-BL-001-Require-MFA"
+    state: "enabled"
+    conditions:
+      users:
+        includeUsers: ["All"]
+        excludeUsers: ["emergency-access@company.com"]
+      applications:
+        includeApplications: ["All"]
+    grantControls:
+      operator: "AND"
+      builtInControls: ["mfa"]
+
+  - name: "SEC-BL-002-Block-Legacy-Auth"
+    state: "enabled"
+    conditions:
+      users:
+        includeUsers: ["All"]
+      clientAppTypes: ["exchangeActiveSync", "other"]
+    grantControls:
+      operator: "OR"
+      builtInControls: ["block"]
+
+  - name: "SEC-BL-003-Device-Controls"
+    state: "enabled"
+    conditions:
+      users:
+        includeUsers: ["All"]
+        excludeGroups: ["device-exclusions"]
+      applications:
+        includeApplications: ["All"]
+    grantControls:
+      operator: "AND"
+      builtInControls: ["compliantDevice"]
+
+sessionControls:
+  global:
+    signInFrequency:
+      value: 4
+      type: "hours"
+    persistentBrowser:
+      mode: "never"
+
+monitoring:
+  metrics:
+    - name: "policy-effectiveness"
+      threshold: 95
+      window: "24h"
+    - name: "mfa-adoption"
+      threshold: 90
+      window: "7d"
+
+compliance:
+  frameworks:
+    - name: "ISO27001"
+      controls:
+        - id: "A.9.4.2"
+          policies: ["SEC-BL-001-Require-MFA"]
+        - id: "A.9.4.1"
+          policies: ["SEC-BL-003-Device-Controls"]
