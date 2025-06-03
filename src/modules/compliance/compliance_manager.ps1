@@ -108,6 +108,53 @@ class ComplianceManager {
         return $assessment
     }
 
+    # Basic implementation to check if a policy seems to satisfy a requirement.
+    # This is a simplified check and might need significant enhancement for real-world accuracy.
+    [bool]CheckRequirement([string]$requirement, [array]$policies) {
+        Write-Verbose "Checking requirement: $requirement"
+        foreach ($policy in $policies) {
+            # Example: Check for MFA enforcement
+            if ($requirement -eq "MFA enforcement") {
+                if ($policy.GrantControls -and $policy.GrantControls.BuiltInControls -contains "mfa") {
+                    Write-Verbose "Policy '$($policy.DisplayName)' satisfies MFA enforcement."
+                    return $true
+                }
+            }
+            # Example: Check for Device compliance
+            elseif ($requirement -eq "Device compliance") {
+                if ($policy.GrantControls -and $policy.GrantControls.BuiltInControls -contains "compliantDevice") {
+                    Write-Verbose "Policy '$($policy.DisplayName)' satisfies Device compliance."
+                    return $true
+                }
+            }
+            # Example: Check for Location-based access
+            elseif ($requirement -eq "Location-based access") {
+                if ($policy.Conditions.Locations) {
+                    Write-Verbose "Policy '$($policy.DisplayName)' has location conditions."
+                    return $true # Simplified: any location condition implies it's location-based
+                }
+            }
+            # Add more checks as needed for other requirements
+        }
+        Write-Verbose "No policy found satisfying requirement: $requirement"
+        return $false
+    }
+
+    # Calculates a simple percentage score based on how many controls are compliant.
+    [double]CalculateOverallScore([hashtable]$controlsAssessment) {
+        if ($null -eq $controlsAssessment -or $controlsAssessment.Count -eq 0) {
+            return 0.0
+        }
+        $compliantCount = 0
+        foreach ($controlKey in $controlsAssessment.Keys) {
+            if ($controlsAssessment[$controlKey].Compliant) {
+                $compliantCount++
+            }
+        }
+        $score = ($compliantCount / $controlsAssessment.Count) * 100
+        return [math]::Round($score, 2)
+    }
+
     [void]GenerateComplianceReport([string]$framework, [string]$outputPath) {
         $report = $this.AssessCompliance($framework)
         
