@@ -55,7 +55,7 @@ cd ca-automation
 3. Configure your environment:
 ```powershell
 Copy-Item .env.example .env
-# Edit .env with your environment settings
+# Edit .env with your environment settings (ensure .env is in .gitignore)
 ```
 
 ## 🚦 Quick Start
@@ -65,7 +65,7 @@ Copy-Item .env.example .env
 Import-Module ./src/modules/policy-management/policy_manager.ps1
 
 $policyManager = [ConditionalAccessPolicyManager]::new($TenantId)
-$policyManager.DeployPolicy("./templates/policies/baseline.yaml")
+$policyManager.DeployPolicy("./templates/policies/security-baseline.yaml")
 ```
 
 2. **Compliance Assessment**
@@ -111,6 +111,7 @@ graph TD
 - Automated conflict detection prevents policy overlap
 - Just-In-Time access for privileged operations
 - Comprehensive audit logging
+- For more details, see [Security Considerations](docs/security/README.md).
 
 ## 📖 Documentation
 
@@ -151,12 +152,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📊 Project Status
 
-- ✅ Core Policy Management
-- ✅ Compliance Engine
-- ✅ Risk Assessment
-- ✅ Basic Monitoring
-- 🔄 Advanced Analytics (In Progress)
-- 📅 ML-based Policy Recommendations (Planned)
+- ✅ Core Policy Management & Foundational Features (see Roadmap for details)
+- 🔄 Advanced Analytics & Enhanced "What If" (In Progress)
+- 📅 ML-based Recommendations & GUI (Planned)
 
 ## 🆘 Support
 
