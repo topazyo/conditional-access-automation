@@ -1,0 +1,30 @@
+{
+    "riskFactors": {
+        "PolicyScope": {
+            "AllUsers": 0.8,
+            "SpecificGroups": 0.4,
+            "Individual": 0.2
+        },
+        "AuthenticationStrength": {
+            "SingleFactor": 0.9,
+            "MFA": 0.3,
+            "Passwordless": 0.1
+        },
+        "ApplicationScope": {
+            "AllApps": 0.7,
+            "CriticalApps": 0.5,
+            "NonCriticalApps": 0.2
+        },
+        "LocationContext": {
+            "AnyLocation": 0.6,
+            "TrustedLocationsOnly": 0.2,
+            "SpecificCountries": 0.4
+        }
+    },
+    "riskWeights": {
+        "PolicyScope": 0.4,
+        "AuthenticationStrength": 0.3,
+        "ApplicationScope": 0.2,
+        "LocationContext": 0.1
+    }
+}
