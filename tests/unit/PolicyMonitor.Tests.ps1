@@ -80,29 +80,88 @@ Describe 'PolicyMonitor Class' {
     }
 
     Context 'Constructor and Connection Setup (ConfigureLogAnalytics)' {
-        It 'Sets properties and logs readiness when Workspace ID and Key are valid' {
-            $verboseMessages = @()
-            Mock Write-Verbose -MockWith { param($Message) $verboseMessages += $Message }
+        # Store original environment variables to restore them later
+        $originalWorkspaceIdEnv = $env:LOG_ANALYTICS_WORKSPACE_ID
+        $originalApiKeyEnv = $env:LOG_ANALYTICS_API_KEY
 
-            $monitor = [PolicyMonitor]::new($mockWorkspaceId, $mockLogAnalyticsKey)
-            $monitor.WorkspaceId.Should().Be($mockWorkspaceId)
-            $monitor.LogAnalyticsKey.Should().Be($mockLogAnalyticsKey)
+        AfterEach {
+            # Restore original environment variables
+            $env:LOG_ANALYTICS_WORKSPACE_ID = $originalWorkspaceIdEnv
+            $env:LOG_ANALYTICS_API_KEY = $originalApiKeyEnv
+            # Clear mocks for Write-Verbose and Write-Warning if they were test-specific
+            Clear-MockWriteVerbose # Assuming a helper or direct Clear-Mock
+            Clear-MockWriteWarning
+        }
+
+        It 'Sets properties from parameters and logs readiness if Workspace ID and Key are provided directly' {
+            $verboseMessages = @()
+            Mock Write-Verbose -MockWith { param($Message) $verboseMessages += $Message } -ModuleName * -Verifiable # Ensure it's the one from PolicyMonitor
+
+            $monitor = [PolicyMonitor]::new("param-ws-id", "param-la-key")
+            $monitor.WorkspaceId.Should().Be("param-ws-id")
+            $monitor.LogAnalyticsKey.Should().Be("param-la-key")
+            $verboseMessages.Should().Contain("Log Analytics Workspace ID and Key are present. Ready to send data to Log Analytics.")
+            # Assert-MockCalled Write-Verbose -Scope It -Times 1 -ParameterFilter { $_ -match "Log Analytics Workspace ID and Key are present" } # More specific
+        }
+
+        It 'Uses environment variables if no parameters are provided' {
+            $env:LOG_ANALYTICS_WORKSPACE_ID = "env-ws-id"
+            $env:LOG_ANALYTICS_API_KEY = "env-la-key"
+            $verboseMessages = @()
+            Mock Write-Verbose -MockWith { param($Message) $verboseMessages += $Message } -ModuleName *
+
+            $monitor = [PolicyMonitor]::new() # No params
+            $monitor.WorkspaceId.Should().Be("env-ws-id")
+            $monitor.LogAnalyticsKey.Should().Be("env-la-key")
+            $verboseMessages.Should().Contain("WorkspaceId parameter not provided, attempting to read from env:LOG_ANALYTICS_WORKSPACE_ID")
+            $verboseMessages.Should().Contain("LogAnalyticsKey parameter not provided, attempting to read from env:LOG_ANALYTICS_API_KEY")
             $verboseMessages.Should().Contain("Log Analytics Workspace ID and Key are present. Ready to send data to Log Analytics.")
         }
 
-        It 'Issues a warning if Workspace ID is missing' {
-            $warningMessages = @()
-            Mock Write-Warning -MockWith { param($Message) $warningMessages += $Message }
+        It 'Overrides environment variables if parameters are provided' {
+            $env:LOG_ANALYTICS_WORKSPACE_ID = "env-ws-id"
+            $env:LOG_ANALYTICS_API_KEY = "env-la-key"
+            $verboseMessages = @()
+            Mock Write-Verbose -MockWith { param($Message) $verboseMessages += $Message } -ModuleName *
 
-            $monitor = [PolicyMonitor]::new($null, $mockLogAnalyticsKey)
+            $monitor = [PolicyMonitor]::new("param-override-ws-id", "param-override-la-key")
+            $monitor.WorkspaceId.Should().Be("param-override-ws-id")
+            $monitor.LogAnalyticsKey.Should().Be("param-override-la-key")
+            $verboseMessages.Should().Not().ContainMatch("attempting to read from env:") # Should not try to read from ENV if params given
+            $verboseMessages.Should().Contain("Log Analytics Workspace ID and Key are present. Ready to send data to Log Analytics.")
+        }
+
+        It 'Uses environment variable for Key if only WorkspaceId parameter is provided' {
+            $env:LOG_ANALYTICS_WORKSPACE_ID = "env-ws-id-not-used" # Should be overridden
+            $env:LOG_ANALYTICS_API_KEY = "env-partial-la-key"
+            $verboseMessages = @()
+            Mock Write-Verbose -MockWith { param($Message) $verboseMessages += $Message } -ModuleName *
+
+            $monitor = [PolicyMonitor]::new("param-partial-ws-id", $null) # Key explicitly null
+            $monitor.WorkspaceId.Should().Be("param-partial-ws-id")
+            $monitor.LogAnalyticsKey.Should().Be("env-partial-la-key")
+            $verboseMessages.Should().Not().ContainMatch("WorkspaceId parameter not provided")
+            $verboseMessages.Should().Contain("LogAnalyticsKey parameter not provided, attempting to read from env:LOG_ANALYTICS_API_KEY")
+            $verboseMessages.Should().Contain("Log Analytics Workspace ID and Key are present. Ready to send data to Log Analytics.")
+        }
+
+        It 'Issues a warning via ConfigureLogAnalytics if Workspace ID is ultimately missing (param and env)' {
+            $env:LOG_ANALYTICS_WORKSPACE_ID = $null
+            $env:LOG_ANALYTICS_API_KEY = "env-key-present"
+            $warningMessages = @()
+            Mock Write-Warning -MockWith { param($Message) $warningMessages += $Message } -ModuleName *
+
+            $monitor = [PolicyMonitor]::new($null, $null) # Try to use ENV vars
             $warningMessages.Should().Contain("Log Analytics Workspace ID or Primary Key is missing or empty. Log Analytics integration will be disabled.")
         }
 
-        It 'Issues a warning if Log Analytics Key is missing' {
+        It 'Issues a warning via ConfigureLogAnalytics if Log Analytics Key is ultimately missing (param and env)' {
+            $env:LOG_ANALYTICS_WORKSPACE_ID = "env-ws-present"
+            $env:LOG_ANALYTICS_API_KEY = $null
             $warningMessages = @()
-            Mock Write-Warning -MockWith { param($Message) $warningMessages += $Message }
+            Mock Write-Warning -MockWith { param($Message) $warningMessages += $Message } -ModuleName *
 
-            $monitor = [PolicyMonitor]::new($mockWorkspaceId, "") # Empty key
+            $monitor = [PolicyMonitor]::new($null, "") # Empty key passed, try ENV for key
             $warningMessages.Should().Contain("Log Analytics Workspace ID or Primary Key is missing or empty. Log Analytics integration will be disabled.")
         }
     }

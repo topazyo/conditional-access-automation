@@ -359,4 +359,84 @@ Describe 'ComplianceManager Class' {
             ($null -eq $script:ExportCsvInputObject -or $script:ExportCsvInputObject.Count -eq 0).Should().BeTrue()
         }
     }
+
+    Context 'NewFromFile Static Method' {
+        $mockTenantId = "file-load-tenant"
+        $mockFrameworkFilePath = "mock-frameworks.json"
+
+        $validFrameworkJsonContent = @{
+            "MY_CUSTOM_FW" = @{
+                "MCF_CTRL_1" = @{
+                    Description = "My Custom Control 1"
+                    Requirements = @("Custom Req 1", "Custom Req 2")
+                }
+            }
+            "ISO27001" = @{ # Example of overriding a default one
+                "A.9.4.1" = @{
+                    Description = "Overridden Info Access"
+                    Requirements = @("MFA Only")
+                }
+            }
+        } | ConvertTo-Json -Depth 5
+
+        $jsonNotAnObject = @"
+[
+    { "Framework": "NotAnObject" }
+]
+"@
+        $malformedJsonContent = '{"ISO27001": {"A.9.4.1": {"Description": "Test"}} # Missing closing brace'
+
+        BeforeEach {
+            # Default mocks for file operations
+            Mock Test-Path { return $true } -ModuleName *
+            Mock Get-Content { return "" } -ModuleName *
+            # Connect-MgGraph is already mocked globally
+        }
+
+        It 'Throws an error if framework file does not exist' {
+            Mock Test-Path -ModuleName * -MockWith { param($Path, $PathType) $PathType -eq 'Leaf' -and $Path -eq $mockFrameworkFilePath | Should -BeTrue; return $false }
+            { [ComplianceManager]::NewFromFile($mockTenantId, $mockFrameworkFilePath) }.Should().Throw("Compliance frameworks configuration file not found: $mockFrameworkFilePath")
+        }
+
+        It 'Throws an error if JSON parsing fails' {
+            Mock Get-Content -ModuleName * -MockWith { param($Path, $Raw) $Path -eq $mockFrameworkFilePath -and $Raw | Should -BeTrue; return $malformedJsonContent }
+            { [ComplianceManager]::NewFromFile($mockTenantId, $mockFrameworkFilePath) }.Should().Throw("Failed to parse JSON from Compliance frameworks file '$mockFrameworkFilePath'.*")
+        }
+
+        It 'Throws an error if parsed JSON is not a hashtable/object at the root' {
+            Mock Get-Content -ModuleName * -MockWith { return $jsonNotAnObject }
+            { [ComplianceManager]::NewFromFile($mockTenantId, $mockFrameworkFilePath) }.Should().Throw("Invalid frameworks file: content from '$mockFrameworkFilePath' is not a valid JSON object representing a collection of frameworks.")
+        }
+
+        It 'Successfully creates an instance and loads custom frameworks from a valid JSON file' {
+            Mock Get-Content -ModuleName * -MockWith { return $validFrameworkJsonContent }
+
+            $instance = $null
+            { $instance = [ComplianceManager]::NewFromFile($mockTenantId, $mockFrameworkFilePath) }.Should().Not().Throw()
+            $instance.Should().Not().BeNull()
+            $instance.Should().BeOfType([ComplianceManager])
+
+            # Verify that the custom frameworks were loaded (constructor validation for structure is already tested)
+            $instance.ComplianceFrameworks.ContainsKey("MY_CUSTOM_FW").Should().BeTrue()
+            $instance.ComplianceFrameworks["MY_CUSTOM_FW"]["MCF_CTRL_1"].Description.Should().Be("My Custom Control 1")
+
+            # Verify override
+            $instance.ComplianceFrameworks.ContainsKey("ISO27001").Should().BeTrue()
+            $instance.ComplianceFrameworks["ISO27001"]["A.9.4.1"].Description.Should().Be("Overridden Info Access")
+            $instance.ComplianceFrameworks["ISO27001"]["A.9.4.1"].Requirements.Should().BeEquivalentTo(@("MFA Only"))
+
+            # Verify a default framework not in the JSON is still loaded (from InitializeDefaultFrameworks)
+            $instance.ComplianceFrameworks.ContainsKey("NIST80053").Should().BeTrue()
+        }
+
+        It 'Handles empty JSON object gracefully (constructor should handle empty customFrameworks)' {
+            Mock Get-Content -ModuleName * -MockWith { return "{}" } # Empty JSON object
+            $instance = $null
+            { $instance = [ComplianceManager]::NewFromFile($mockTenantId, $mockFrameworkFilePath) }.Should().Not().Throw()
+            $instance.Should().Not().BeNull()
+            # All frameworks should be defaults
+            $instance.ComplianceFrameworks.ContainsKey("ISO27001").Should().BeTrue()
+            $instance.ComplianceFrameworks["ISO27001"]["A.9.4.1"].Description.Should().Be("Information access restriction") # Default value
+        }
+    }
 }

@@ -2,6 +2,36 @@ class RiskAssessor {
     hidden [hashtable]$RiskFactors
     hidden [hashtable]$RiskWeights
 
+    static [RiskAssessor] NewFromFile([string]$configFilePath) {
+        Write-Verbose "Attempting to load RiskAssessor configuration from file: $configFilePath"
+        if (-not (Test-Path -Path $configFilePath -PathType Leaf)) {
+            throw "RiskAssessor configuration file not found: $configFilePath"
+        }
+
+        $configJson = Get-Content -Path $configFilePath -Raw -ErrorAction Stop
+        $config = $null
+        try {
+            $config = $configJson | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            throw "Failed to parse JSON from RiskAssessor configuration file '$configFilePath'. Error: $($_.Exception.Message)"
+        }
+
+        if ($null -eq $config) { # Should be caught by try-catch if ConvertFrom-Json fails, but as a safeguard.
+            throw "Parsed configuration from '$configFilePath' is null."
+        }
+
+        if (-not $config.PSObject.Properties.Name.Contains('riskFactors') -or $config.riskFactors -isnot [hashtable]) {
+            throw "Invalid RiskAssessor config from '$configFilePath': 'riskFactors' property is missing or not a valid object/hashtable."
+        }
+        if (-not $config.PSObject.Properties.Name.Contains('riskWeights') -or $config.riskWeights -isnot [hashtable]) {
+            throw "Invalid RiskAssessor config from '$configFilePath': 'riskWeights' property is missing or not a valid object/hashtable."
+        }
+
+        Write-Verbose "Successfully loaded and validated risk model from '$configFilePath'."
+        return [RiskAssessor]::new($config.riskFactors, $config.riskWeights)
+    }
+
     # Constructor now accepts custom risk factors and weights.
     # If custom values are provided, they will be merged with/override the defaults.
     RiskAssessor([hashtable]$customRiskFactors, [hashtable]$customRiskWeights) {
@@ -10,29 +40,59 @@ class RiskAssessor {
 
         # Merge custom risk factors if provided
         if ($null -ne $customRiskFactors) {
-            Write-Verbose "Applying custom risk factors."
-            foreach ($key in $customRiskFactors.Keys) {
-                # If the default factor for this key is also a hashtable, merge them (shallow merge for sub-hashtable)
-                if ($this.RiskFactors.ContainsKey($key) -and
-                    $this.RiskFactors[$key].GetType() -eq [hashtable] -and
-                    $customRiskFactors[$key].GetType() -eq [hashtable]) {
+            Write-Verbose "Validating and applying custom risk factors."
+            foreach ($factorName in $customRiskFactors.Keys) {
+                $factorValue = $customRiskFactors[$factorName]
 
-                    Write-Verbose "Merging sub-factors for '$key'."
-                    foreach ($subKey in $customRiskFactors[$key].Keys) {
-                        $this.RiskFactors[$key][$subKey] = $customRiskFactors[$key][$subKey]
+                # Validate structure: if overriding a default factor that is a hashtable, custom one must also be a hashtable
+                if ($this.RiskFactors.ContainsKey($factorName) -and $this.RiskFactors[$factorName] -is [hashtable]) {
+                    if ($factorValue -isnot [hashtable]) {
+                        Write-Warning "Custom risk factor '$factorName' is expected to be a hashtable to override existing default factor structure, but it is a '$($factorValue.GetType().Name)'. Skipping this custom factor."
+                        continue # Skip this invalid custom factor
+                    }
+                    # If both are hashtables, merge them (shallow merge for sub-hashtable)
+                    Write-Verbose "Merging sub-factors for '$factorName'."
+                    foreach ($subKey in $factorValue.Keys) {
+                        # Optional: Add type checks for sub-factor values if they are expected to be numeric
+                        $this.RiskFactors[$factorName][$subKey] = $factorValue[$subKey]
                     }
                 } else {
-                    # Otherwise, replace or add the top-level factor
-                    $this.RiskFactors[$key] = $customRiskFactors[$key]
+                    # Otherwise, it's a new factor or overriding a non-hashtable one (if any)
+                    # Basic validation: if the factorValue itself is a hashtable, ensure its sub-values are numeric (common for risk factors)
+                    if ($factorValue -is [hashtable]) {
+                        foreach ($subKeyVal in $factorValue.Values) {
+                            if ($subKeyVal -isnot [double] -and $subKeyVal -isnot [int]) {
+                                Write-Warning "Value '$subKeyVal' for sub-key under custom factor '$factorName' is not numeric. Ensure all terminal risk factor values are numbers."
+                                # Depending on strictness, could skip this subKey or the whole factor.
+                            }
+                        }
+                    } elseif($factorValue -isnot [double] -and $factorValue -isnot [int] -and $this.RiskFactors.ContainsKey($factorName)) {
+                         # If overriding a known non-hashtable factor, it should be numeric
+                         Write-Warning "Custom risk factor '$factorName' (which is not a category/hashtable) has a non-numeric value '$factorValue'. Skipping."
+                         continue
+                    }
+                    $this.RiskFactors[$factorName] = $factorValue
                 }
             }
         }
 
         # Merge custom risk weights if provided (weights are typically flat key-value)
         if ($null -ne $customRiskWeights) {
-            Write-Verbose "Applying custom risk weights."
-            foreach ($key in $customRiskWeights.Keys) {
-                $this.RiskWeights[$key] = $customRiskWeights[$key]
+            Write-Verbose "Validating and applying custom risk weights."
+            foreach ($weightName in $customRiskWeights.Keys) {
+                $weightValue = $customRiskWeights[$weightName]
+                $isNumeric = $true
+                try {
+                    [double]$weightValue | Out-Null
+                } catch {
+                    $isNumeric = $false
+                }
+
+                if (-not $isNumeric) {
+                    Write-Warning "Custom risk weight '$weightName' value '$($weightValue)' is not numeric. Skipping this custom weight."
+                    continue # Skip this invalid custom weight
+                }
+                $this.RiskWeights[$weightName] = [double]$weightValue # Store as double
             }
         }
     }
