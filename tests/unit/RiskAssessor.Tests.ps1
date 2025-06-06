@@ -327,4 +327,93 @@ Describe 'RiskAssessor Class' {
              Assert-VerifiableMocks
         }
     }
+
+    Context 'NewFromFile Static Method' {
+        $mockConfigFilePath = "mock-risk-config.json"
+        $validJsonContent = @{
+            riskFactors = @{
+                PolicyScope = @{ AllUsers = 0.99 } # Custom value
+            }
+            riskWeights = @{
+                PolicyScope = 0.55 # Custom value
+            }
+        } | ConvertTo-Json -Depth 5
+
+        $incompleteJsonContentMissingFactors = @{
+            # riskFactors is missing
+            riskWeights = @{ PolicyScope = 0.1 }
+        } | ConvertTo-Json
+
+        $incompleteJsonContentMissingWeights = @{
+            riskFactors = @{ PolicyScope = @{ AllUsers = 0.1 } }
+            # riskWeights is missing
+        } | ConvertTo-Json
+
+        $malformedJsonContent = '{"riskFactors": {"PolicyScope": {"AllUsers": 0.99}} # Missing closing brace and weights'
+
+
+        BeforeEach {
+            # Ensure mocks from other contexts don't interfere if they were changed
+            Mock Test-Path { return $true } -ModuleName * # Default to file exists
+            Mock Get-Content { return "" } -ModuleName *   # Default to empty content
+        }
+
+        It 'Throws an error if config file does not exist' {
+            Mock Test-Path -ModuleName * -MockWith { param($Path, $PathType) $PathType -eq 'Leaf' -and $Path -eq $mockConfigFilePath | Should -BeTrue; return $false }
+            { [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Throw("RiskAssessor configuration file not found: $mockConfigFilePath")
+        }
+
+        It 'Throws an error if JSON parsing fails' {
+            Mock Get-Content -ModuleName * -MockWith { param($Path, $Raw) $Path -eq $mockConfigFilePath -and $Raw | Should -BeTrue; return $malformedJsonContent }
+            { [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Throw("Failed to parse JSON from RiskAssessor configuration file '$mockConfigFilePath'.*")
+        }
+
+        It 'Throws an error if "riskFactors" key is missing or not a hashtable' {
+            Mock Get-Content -ModuleName * -MockWith { return $incompleteJsonContentMissingFactors }
+            { [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Throw("Invalid RiskAssessor config from '$mockConfigFilePath': 'riskFactors' property is missing or not a valid object/hashtable.")
+
+            $invalidFactorsType = @{ riskFactors = "not a hashtable"; riskWeights = @{} } | ConvertTo-Json
+            Mock Get-Content -ModuleName * -MockWith { return $invalidFactorsType }
+            { [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Throw("Invalid RiskAssessor config from '$mockConfigFilePath': 'riskFactors' property is missing or not a valid object/hashtable.")
+        }
+
+        It 'Throws an error if "riskWeights" key is missing or not a hashtable' {
+            Mock Get-Content -ModuleName * -MockWith { return $incompleteJsonContentMissingWeights }
+            { [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Throw("Invalid RiskAssessor config from '$mockConfigFilePath': 'riskWeights' property is missing or not a valid object/hashtable.")
+
+            $invalidWeightsType = @{ riskFactors = @{}; riskWeights = "not a hashtable" } | ConvertTo-Json
+            Mock Get-Content -ModuleName * -MockWith { return $invalidWeightsType }
+            { [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Throw("Invalid RiskAssessor config from '$mockConfigFilePath': 'riskWeights' property is missing or not a valid object/hashtable.")
+        }
+
+        It 'Successfully creates an instance and loads custom config from a valid JSON file' {
+            Mock Get-Content -ModuleName * -MockWith { return $validJsonContent }
+
+            $instance = $null
+            { $instance = [RiskAssessor]::NewFromFile($mockConfigFilePath) }.Should().Not().Throw()
+            $instance.Should().Not().BeNull()
+            $instance.Should().BeOfType([RiskAssessor])
+
+            # Verify that the custom values from the JSON were applied by checking a specific factor/weight
+            # This requires accessing the internal $this.RiskFactors, which might not be directly possible if truly hidden.
+            # Test by effect: Use CalculatePolicyRisk with a known policy and see if the score reflects the custom JSON.
+            # The constructor's own tests already verify merging logic given hashtables.
+            # Here, we verify NewFromFile correctly passes the hashtables to the constructor.
+
+            # We can use a known policy and calculate expected risk with default, then with custom from JSON.
+            $defaultAssessor = [RiskAssessor]::new($null, $null) # Default values
+            $policy = $script:NewMockPolicy # AllUsers, no specific grant controls
+
+            $defaultScore = $defaultAssessor.CalculatePolicyRisk($policy) # (0.8 * 0.4) + (0.9 * 0.3) = 0.32 + 0.27 = 0.59
+
+            $customLoadedAssessor = [RiskAssessor]::NewFromFile($mockConfigFilePath) # Uses $validJsonContent via mock
+            $customScore = $customLoadedAssessor.CalculatePolicyRisk($policy)
+            # Expected from $validJsonContent: PolicyScope.AllUsers = 0.99, PolicyScope Weight = 0.55
+            # Other factors/weights are default. AuthStrength.SingleFactor = 0.9, AuthStrength Weight = 0.3
+            # Custom score: (0.99 * 0.55) + (0.9 * 0.3) = 0.5445 + 0.27 = 0.8145
+
+            $customScore.Should().BeApproximately(0.8145, 0.0001)
+            $customScore.Should().Not().BeApproximately($defaultScore, 0.0001) # Ensure it's different from default
+        }
+    }
 }

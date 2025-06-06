@@ -118,12 +118,68 @@ class ConditionalAccessPolicyManager {
     }
 
     hidden [void]ValidatePolicyDefinition([hashtable]$policy) {
+        # Attempt to get DisplayName for more informative error messages
+        $policyDisplayNameForError = "'Unnamed Policy'"
+        if ($null -ne $policy -and $policy.PSObject.Properties.Name.Contains('DisplayName') -and -not [string]::IsNullOrEmpty($policy.DisplayName)) {
+            $policyDisplayNameForError = "'$($policy.DisplayName)'"
+        }
+
+        if ($null -eq $policy) {
+            throw "Policy definition provided is null. Cannot validate."
+        }
+
         $requiredProperties = @('DisplayName', 'State', 'Conditions', 'GrantControls')
         foreach ($prop in $requiredProperties) {
-            if (-not $policy.ContainsKey($prop)) {
-                throw "Policy definition missing required property: $prop"
+            # Use PSObject.Properties.Name.Contains for robust key check on PSCustomObject or Hashtable
+            if (-not $policy.PSObject.Properties.Name.Contains($prop)) {
+                throw "Policy definition $policyDisplayNameForError missing required top-level property: '$prop'."
             }
         }
+
+        # Validate 'Conditions' structure
+        if ($policy.Conditions -isnot [hashtable] -and $policy.Conditions -isnot [pscustomobject]) {
+            throw "Policy $policyDisplayNameForError: property 'Conditions' must be a hashtable or object."
+        }
+        $requiredConditionsKeys = @('Users', 'Applications') # Minimum required condition sets
+        foreach ($key in $requiredConditionsKeys) {
+            if (-not $policy.Conditions.PSObject.Properties.Name.Contains($key)) {
+                throw "Policy $policyDisplayNameForError: 'Conditions' property missing required sub-property: '$key'."
+            }
+            # Check if the sub-property itself is of the correct type (hashtable/object)
+            # Accessing $policy.Conditions.$key directly is fine after checking key existence
+            if ($policy.Conditions.$key -isnot [hashtable] -and $policy.Conditions.$key -isnot [pscustomobject]) {
+                throw "Policy $policyDisplayNameForError: 'Conditions.$key' must be a hashtable or object."
+            }
+        }
+        # Example deeper check (optional for this pass, but good for robustness):
+        # if ($policy.Conditions.Users.PSObject.Properties.Name.Contains('includeUsers') -and
+        #     $policy.Conditions.Users.includeUsers -isnot [array]) {
+        #     throw "Policy $policyDisplayNameForError: 'Conditions.Users.includeUsers' should be an array."
+        # }
+
+
+        # Validate 'GrantControls' structure
+        if ($policy.GrantControls -isnot [hashtable] -and $policy.GrantControls -isnot [pscustomobject]) {
+            throw "Policy $policyDisplayNameForError: property 'GrantControls' must be a hashtable or object."
+        }
+        if (-not $policy.GrantControls.PSObject.Properties.Name.Contains('Operator')) {
+            throw "Policy $policyDisplayNameForError: 'GrantControls' property missing required sub-property: 'Operator'."
+        }
+        # Graph API is case-sensitive for 'OR'/'AND' for GrantControls.Operator
+        if ($policy.GrantControls.Operator -ne 'OR' -and $policy.GrantControls.Operator -ne 'AND') {
+            throw "Policy $policyDisplayNameForError: 'GrantControls.Operator' must be 'OR' or 'AND'. Found: '$($policy.GrantControls.Operator)'."
+        }
+        # Typically, if Operator is OR/AND, BuiltInControls should exist, even if empty array for some "grant" scenarios.
+        # If Operator is Block, BuiltInControls might be null or not present, as block is the control.
+        # The Graph API might be more lenient here, but for a well-defined policy, Operator implies need for BuiltInControls or CustomAuthenticationFactors.
+        if ($policy.GrantControls.Operator -ne "block") { # 'block' is a valid value for GrantControls, but it means no other controls are specified. Graph API actually has GrantControls = $null for block.
+             # This check might be too strict as GrantControls can be null for block or include builtInControls = @("block")
+             # A more accurate check would be: if ($null -eq $policy.GrantControls.BuiltInControls -and $null -eq $policy.GrantControls.CustomAuthenticationFactors)
+             # For now, we ensure Operator is present and valid. The specific structure of grant controls beyond Operator
+             # can be quite varied (e.g. can be null if state is 'disabled' and 'enabledForReportingButNotEnforced').
+             # The Graph API itself will be the ultimate validator for complex grant control structures.
+        }
+         Write-Verbose "Policy definition $policyDisplayNameForError passed basic validation."
     }
 
     hidden [string]CalculatePolicyRisk([object]$policy) {

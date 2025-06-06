@@ -3,6 +3,37 @@ class ComplianceManager {
     [hashtable]$ComplianceFrameworks
     hidden [object]$GraphConnection
 
+    static [ComplianceManager] NewFromFile([string]$tenantId, [string]$frameworkFilePath) {
+        Write-Verbose "Attempting to load ComplianceManager frameworks from file: $frameworkFilePath"
+        if (-not (Test-Path -Path $frameworkFilePath -PathType Leaf)) {
+            throw "Compliance frameworks configuration file not found: $frameworkFilePath"
+        }
+
+        $frameworkJson = Get-Content -Path $frameworkFilePath -Raw -ErrorAction Stop
+        $customFrameworks = $null
+        try {
+            $customFrameworks = $frameworkJson | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            throw "Failed to parse JSON from Compliance frameworks file '$frameworkFilePath'. Error: $($_.Exception.Message)"
+        }
+
+        if ($null -eq $customFrameworks) { # Should be caught by try-catch if ConvertFrom-Json fails.
+            throw "Parsed custom frameworks from '$frameworkFilePath' is null."
+        }
+
+        # Basic validation: root must be a hashtable (JSON object)
+        if ($customFrameworks -isnot [hashtable] -and $customFrameworks -isnot [pscustomobject]) {
+            throw "Invalid frameworks file: content from '$frameworkFilePath' is not a valid JSON object representing a collection of frameworks."
+        }
+
+        # The main constructor [ComplianceManager]::new($tenantId, $customFrameworks) already contains
+        # detailed validation for the structure of each framework and its controls.
+        # So, we can directly pass the parsed $customFrameworks to it.
+        Write-Verbose "Successfully loaded custom frameworks from '$frameworkFilePath'. Passing to constructor."
+        return [ComplianceManager]::new($tenantId, $customFrameworks)
+    }
+
     # Constructor now accepts custom compliance frameworks.
     # If custom frameworks are provided, they will be merged with/override the defaults.
     ComplianceManager([string]$tenantId, [hashtable]$customComplianceFrameworks) {
@@ -13,16 +44,44 @@ class ComplianceManager {
 
         # Merge custom compliance frameworks if provided
         if ($null -ne $customComplianceFrameworks) {
-            Write-Verbose "Applying custom compliance frameworks."
+            Write-Verbose "Validating and applying custom compliance frameworks."
             foreach ($frameworkName in $customComplianceFrameworks.Keys) {
-                if ($this.ComplianceFrameworks.ContainsKey($frameworkName)) {
-                    Write-Verbose "Overriding existing framework '$frameworkName' with custom definition."
-                } else {
-                    Write-Verbose "Adding new custom framework '$frameworkName'."
+                $frameworkValue = $customComplianceFrameworks[$frameworkName]
+
+                if ($frameworkValue -isnot [hashtable]) {
+                    Write-Warning "Custom compliance framework '$frameworkName' is not structured as a hashtable. Skipping this custom framework."
+                    continue # Skip this framework
                 }
-                # This replaces the entire framework definition if it exists, or adds a new one.
-                # Deep merging of individual controls within a framework would require more complex logic.
-                $this.ComplianceFrameworks[$frameworkName] = $customComplianceFrameworks[$frameworkName]
+
+                $validControlsInFramework = @{}
+                foreach ($controlName in $frameworkValue.Keys) {
+                    $controlValue = $frameworkValue[$controlName]
+                    if ($controlValue -isnot [hashtable]) {
+                        Write-Warning "Control '$controlName' within custom framework '$frameworkName' is not a hashtable. Skipping this control."
+                        continue # Skip this control
+                    }
+                    if (-not $controlValue.ContainsKey('Description') -or $controlValue.Description -isnot [string] -or `
+                        -not $controlValue.ContainsKey('Requirements') -or $controlValue.Requirements -isnot [array]) {
+                        Write-Warning "Control '$controlName' in framework '$frameworkName' is missing 'Description' (string) or 'Requirements' (array), or they are of the wrong type. Skipping this control."
+                        continue # Skip this malformed control
+                    }
+                    # Add valid control to a temporary hashtable for this framework
+                    $validControlsInFramework[$controlName] = $controlValue
+                }
+
+                if ($validControlsInFramework.Count -gt 0) {
+                    if ($this.ComplianceFrameworks.ContainsKey($frameworkName)) {
+                        Write-Verbose "Overriding existing framework '$frameworkName' with validated custom definition."
+                    } else {
+                        Write-Verbose "Adding new custom framework '$frameworkName' with validated controls."
+                    }
+                    # Assign the collection of validated controls for this framework
+                    $this.ComplianceFrameworks[$frameworkName] = $validControlsInFramework
+                } elseif ($frameworkValue.Keys.Count -gt 0) { # Custom framework had controls defined, but all were invalid
+                    Write-Warning "Custom framework '$frameworkName' contained no valid controls after validation. It will not be added/updated."
+                } else { # Custom framework was an empty hashtable
+                     Write-Warning "Custom framework '$frameworkName' is an empty hashtable. Skipping."
+                }
             }
         }
 

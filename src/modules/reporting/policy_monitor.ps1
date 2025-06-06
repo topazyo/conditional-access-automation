@@ -3,9 +3,22 @@ class PolicyMonitor {
     [string]$LogAnalyticsKey
     hidden [object]$GraphConnection
 
-    PolicyMonitor([string]$workspaceId, [string]$logAnalyticsKey) {
-        $this.WorkspaceId = $workspaceId
-        $this.LogAnalyticsKey = $logAnalyticsKey
+    # Constructor now uses optional parameters and falls back to environment variables if parameters are not supplied.
+    PolicyMonitor([string]$WorkspaceId = $null, [string]$LogAnalyticsKey = $null) {
+        $this.WorkspaceId = if ([string]::IsNullOrEmpty($WorkspaceId)) {
+            Write-Verbose "WorkspaceId parameter not provided, attempting to read from env:LOG_ANALYTICS_WORKSPACE_ID"
+            $env:LOG_ANALYTICS_WORKSPACE_ID
+        } else {
+            $WorkspaceId
+        }
+
+        $this.LogAnalyticsKey = if ([string]::IsNullOrEmpty($LogAnalyticsKey)) {
+            Write-Verbose "LogAnalyticsKey parameter not provided, attempting to read from env:LOG_ANALYTICS_API_KEY"
+            $env:LOG_ANALYTICS_API_KEY
+        } else {
+            $LogAnalyticsKey
+        }
+
         $this.ConnectToServices()
     }
 

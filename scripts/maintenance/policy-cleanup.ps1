@@ -154,6 +154,7 @@ function Merge-RedundantPolicies {
             Write-Host "Calling Merge-Policies (currently a non-acting placeholder) for the set above."
             Merge-Policies $set.Policies
             Write-Host "Merge-Policies call completed. Manual review and action are required."
+        }
     }
 }
 

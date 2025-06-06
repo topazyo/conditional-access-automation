@@ -6,18 +6,18 @@ This document outlines the architectural decisions and implementation details fo
 
 ### Policy Management Module
 - Handles policy creation, updates, and deletion
-- Implements risk assessment logic
-- Manages policy dependencies and conflicts
+- Includes basic policy risk calculation; detailed assessment is provided by the RiskAssessor module.
+- Works with the PolicyValidator module for conflict detection. Dependency management is manual.
 
 ### Compliance Module
 - Tracks compliance requirements
 - Generates compliance reports
-- Maintains audit trails
+- Assesses compliance against policies; audit trails are available in Azure AD and leveraged by the Reporting Module.
 
 ### Reporting Module
 - Generates operational metrics
 - Tracks policy effectiveness
-- Provides business impact analysis
+- Provides data and metrics that can support business impact analysis.
 
 ## Security Considerations
 
@@ -41,7 +41,7 @@ This document outlines the architectural decisions and implementation details fo
 1. Policy Development
    - Follow least-privilege principle
    - Implement gradual rollout capability
-   - Include rollback procedures
+   - Leverage version control for policy definitions to facilitate manual rollback if needed.
 
 2. Testing Requirements
    - Unit tests for all core functions
