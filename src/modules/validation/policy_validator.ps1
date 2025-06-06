@@ -139,84 +139,153 @@ class PolicyValidator {
         return $overlap.Count -gt 0
     }
 
-    # Basic implementation to check for application overlap.
-    # This is a simplified check.
+    # Enhanced implementation to check for application overlap.
     hidden [bool]CheckApplicationOverlap([hashtable]$newApplications, [object]$existingApplications) {
-        if (($null -eq $newApplications -or $null -eq $newApplications.includeApplications) -and
-            ($null -eq $existingApplications -or $null -eq $existingApplications.IncludeApplications)) {
-            return $false # No applications defined in either
-        }
+        # Normalize "All" applications GUID for comparison
+        $allAppsGuid = "00000000-0000-0000-0000-000000000000" # Placeholder for actual "All" applications ID if it's a GUID
+        # Graph API might return 'All', a specific GUID for "All Client Apps", or an empty array for includeApplications and rely on includeUserActions.
+        # For this logic, we'll assume 'All' string or a known GUID signifies all applications.
 
-        # If one policy applies to "All" applications, and the other has any includes, it's an overlap.
-        # Note: Graph API returns "All" as a specific GUID '00000000-0000-0000-0000-000000000000' or "None" for specific exclusions.
-        # For simplicity, we'll check for "All" string if manually defined, or the known GUID.
-        # A more robust check would use the specific GUIDs for "All" and "None".
-        if (($newApplications.includeApplications -contains "All" -or $newApplications.includeApplications -contains "00000000-0000-0000-0000-000000000000") -and $existingApplications.IncludeApplications.Count -gt 0) {
-            # Consider excluded apps if "All" is used. If new is "All" but excludes what existing includes, it might not be an overlap.
-            # This basic version doesn't deeply check exclusions against "All".
-            Write-Verbose "Overlap: New policy includes 'All' applications."
-            return $true
-        }
-        if (($existingApplications.IncludeApplications -contains "All" -or $existingApplications.IncludeApplications -contains "00000000-0000-0000-0000-000000000000") -and $newApplications.includeApplications.Count -gt 0) {
-            Write-Verbose "Overlap: Existing policy includes 'All' applications."
-            return $true
-        }
+        $newIncludes = @($newApplications.includeApplications | ForEach-Object { $_ -replace "'", "" }) # Sanitize if needed
+        $newExcludes = @($newApplications.excludeApplications | ForEach-Object { $_ -replace "'", "" })
+        $newActions = @($newApplications.includeUserActions | ForEach-Object { $_ -replace "'", "" })
 
-        # Check for common application IDs if neither is "All"
-        if ($null -ne $newApplications.includeApplications -and $null -ne $existingApplications.IncludeApplications) {
-            $commonApps = Compare-Object $newApplications.includeApplications $existingApplications.IncludeApplications -IncludeEqual -ExcludeDifferent
-            if ($commonApps.Count -gt 0) {
-                Write-Verbose "Overlap: Common applications found: $($commonApps | Select-Object -ExpandProperty InputObject -Join ', ')"
-                return $true
+        $existingIncludes = @($existingApplications.IncludeApplications | ForEach-Object { $_ -replace "'", "" })
+        $existingExcludes = @($existingApplications.ExcludeApplications | ForEach-Object { $_ -replace "'", "" })
+        $existingActions = @($existingApplications.IncludeUserActions | ForEach-Object { $_ -replace "'", "" })
+
+        $newIsAllApps = $newIncludes -contains "All" -or $newIncludes -contains $allAppsGuid
+        $existingIsAllApps = $existingIncludes -contains "All" -or $existingIncludes -contains $allAppsGuid
+
+        $appOverlapDetected = $false
+
+        if ($newIsAllApps -and $existingIsAllApps) {
+            Write-Verbose "AppOverlap: Both policies target 'All' applications."
+            $appOverlapDetected = $true
+        } elseif ($newIsAllApps) {
+            # New is "All", existing is specific. Overlap if any of existing's includes are not in new's excludes.
+            foreach ($app in $existingIncludes) {
+                if ($app -notin $newExcludes) {
+                    Write-Verbose "AppOverlap: New targets 'All', existing targets '$app' which is not excluded by new."
+                    $appOverlapDetected = $true
+                    break
+                }
+            }
+        } elseif ($existingIsAllApps) {
+            # Existing is "All", new is specific. Overlap if any of new's includes are not in existing's excludes.
+            foreach ($app in $newIncludes) {
+                if ($app -notin $existingExcludes) {
+                    Write-Verbose "AppOverlap: Existing targets 'All', new targets '$app' which is not excluded by existing."
+                    $appOverlapDetected = $true
+                    break
+                }
+            }
+        } else {
+            # Both are specific lists of applications.
+            foreach ($newApp in $newIncludes) {
+                if (($newApp -in $existingIncludes) -and ($newApp -notin $newExcludes) -and ($newApp -notin $existingExcludes)) {
+                    Write-Verbose "AppOverlap: Specific app '$newApp' is included in both policies and not excluded by either."
+                    $appOverlapDetected = $true
+                    break
+                }
             }
         }
 
-        # Basic check for user actions if applications are not defined or don't overlap
-        # This part is highly dependent on how user actions are structured and compared.
-        # For now, if includeUserActions has 'All' in one and any action in another, consider it a potential overlap.
-        if (($newApplications.includeUserActions -contains "All" -or $newApplications.includeUserActions -contains "all") -and $existingApplications.IncludeUserActions.Count -gt 0) {
-             Write-Verbose "Overlap: New policy includes 'All' user actions."
-            return $true
-        }
-         if (($existingApplications.IncludeUserActions -contains "All" -or $existingApplications.IncludeUserActions -contains "all") -and $newApplications.includeUserActions.Count -gt 0) {
-             Write-Verbose "Overlap: Existing policy includes 'All' user actions."
-            return $true
-        }
-        if($null -ne $newApplications.includeUserActions -and $null -ne $existingApplications.IncludeUserActions){
-            $commonActions = Compare-Object $newApplications.includeUserActions $existingApplications.IncludeUserActions -IncludeEqual -ExcludeDifferent
-            if ($commonActions.Count -gt 0) {
-                Write-Verbose "Overlap: Common user actions found: $($commonActions | Select-Object -ExpandProperty InputObject -Join ', ')"
-                return $true
+        if (-not $appOverlapDetected) {
+            # If no direct application ID overlap, consider user actions if one policy is "All Apps" and the other has specific user actions,
+            # or if both have user actions but no app IDs. This part can be complex.
+            # For this version, if app IDs don't overlap, we assume no overlap for simplicity unless both target 'All' user actions.
+            # A more refined check would be if one is All Apps and has user actions that intersect with the other policy's user actions (even if other has specific apps).
+            if (($newActions -contains "All" -or $newActions -contains "all") -and ($existingActions -contains "All" -or $existingActions -contains "all") ) {
+                 # This case is if app IDs didn't overlap but both policies have "All" user actions, which is a broad overlap.
+                 # This might be too simplistic if apps were very specific and disjoint.
+                 # However, if $appOverlapDetected is false, it means apps were disjoint or one/both were empty.
+                 # If both $newIncludes and $existingIncludes are empty, then user actions become primary.
+                if (($newIncludes.Count -eq 0 -or $newIncludes[0] -eq 'None') -and ($existingIncludes.Count -eq 0 -or $existingIncludes[0] -eq 'None')){
+                     Write-Verbose "AppOverlap: No specific apps, but both policies target 'All' user actions."
+                     $appOverlapDetected = $true
+                }
             }
+             # If one targets all apps and has user actions, and the other has specific apps but matching user actions.
+             # This is getting too complex for this iteration, focusing on app ID based overlap first.
         }
 
 
-        Write-Verbose "No direct application or user action overlap found by basic check."
+        # If application overlap is detected, then check user actions for further refinement (optional for this version, consider it overlap if apps overlap)
+        if ($appOverlapDetected) {
+            # At this point, application IDs are considered overlapping.
+            # We can refine by checking user actions, but the prompt stated:
+            # "If application IDs overlap but user actions do not intersect...this specific subtask should still consider it an application overlap"
+            # So, we don't need to make $appOverlapDetected false based on user actions if it's already true.
+            # However, we can log the user action situation.
+
+            $newHasAllActions = $newActions -contains "All" -or $newActions -contains "all"
+            $existingHasAllActions = $existingActions -contains "All" -or $existingActions -contains "all"
+
+            if ($newHasAllActions -and $existingHasAllActions) {
+                Write-Verbose "UserAction SubCheck: Both policies apply to 'All' user actions for the overlapping apps."
+            } elseif ($newHasAllActions -and $existingActions.Count -gt 0) {
+                Write-Verbose "UserAction SubCheck: New policy 'All' actions, Existing has specific actions for overlapping apps."
+            } elseif ($existingHasAllActions -and $newActions.Count -gt 0) {
+                Write-Verbose "UserAction SubCheck: Existing policy 'All' actions, New has specific actions for overlapping apps."
+            } elseif ($newActions.Count -gt 0 -and $existingActions.Count -gt 0) {
+                $commonActions = Compare-Object $newActions $existingActions -IncludeEqual -ExcludeDifferent
+                if ($commonActions.Count -gt 0) {
+                    Write-Verbose "UserAction SubCheck: Common specific user actions found for overlapping apps: $($commonActions | Select-Object -ExpandProperty InputObject -Join ', ')"
+                } else {
+                    Write-Verbose "UserAction SubCheck: Specific user actions for overlapping apps do not intersect."
+                }
+            }
+            return $true # As per requirement, if apps overlap, it's an overlap.
+        }
+
+        Write-Verbose "No significant application overlap detected by enhanced check."
         return $false
     }
 
-    # Basic placeholder for control conflict detection.
-    # True conflict detection is very complex.
+    # Enhanced implementation for control conflict detection.
     hidden [bool]CheckControlConflict([hashtable]$newGrantControls, [object]$existingGrantControls) {
-        # If either is null or has no controls, no conflict based on grant controls alone.
-        if ($null -eq $newGrantControls -or $null -eq $existingGrantControls) {
+        # Ensure grant controls and builtInControls are available for comparison
+        $newControls = $newGrantControls.builtInControls
+        $existingControls = $existingGrantControls.BuiltInControls # Note: Property name from Graph might be .BuiltInControls
+
+        # If either policy has no specific grant controls defined (e.g., it's purely conditional), no conflict.
+        if (($null -eq $newControls -or $newControls.Count -eq 0) -or `
+            ($null -eq $existingControls -or $existingControls.Count -eq 0)) {
+            Write-Verbose "ControlConflict: One or both policies have no defined built-in grant controls. No conflict."
             return $false
         }
 
-        # Simplistic: If one policy blocks and the other grants/requires something, it's a potential conflict.
-        # This doesn't account for conditions.
-        if (($newGrantControls.Operator -eq "Block" -and $existingGrantControls.Operator -ne "Block") -or `
-            ($existingGrantControls.Operator -eq "Block" -and $newGrantControls.Operator -ne "Block")) {
-            Write-Warning "Potential conflict: One policy blocks while the other grants/requires. Conditions are not fully analyzed here."
-            return $true # This is a strong indicator of conflict if conditions align.
+        $newIsBlock = $newControls -contains "block"
+        $existingIsBlock = $existingControls -contains "block"
+
+        # Case 1: Both policies block. This is not a conflict; they agree.
+        if ($newIsBlock -and $existingIsBlock) {
+            Write-Verbose "ControlConflict: Both policies enforce 'block'. No conflict."
+            return $false
         }
 
-        # If both are grant controls, e.g., one requires MFA and other requires Compliant Device.
-        # This is typically not a conflict but a combination if conditions match.
-        # A true conflict would be if grant controls are mutually exclusive for the same conditions,
-        # which is rare with builtInControls but could happen with customControls.
-        # For now, returning false as a safe default for non-block scenarios.
-        Write-Warning "Sophisticated control conflict detection (e.g., mutually exclusive grant controls) is not fully implemented. Assuming no conflict for non-block scenarios."
+        # Case 2: One policy blocks, the other grants/requires (i.e., does not block and has controls). This is a conflict.
+        if ($newIsBlock -and (-not $existingIsBlock -and $existingControls.Count -gt 0) ) {
+            Write-Warning "ControlConflict: New policy 'blocks' while existing policy grants/requires specific controls (e.g., $($existingControls -join ', ')). Potential conflict."
+            return $true
+        }
+        if ($existingIsBlock -and (-not $newIsBlock -and $newControls.Count -gt 0) ) {
+            Write-Warning "ControlConflict: Existing policy 'blocks' while new policy grants/requires specific controls (e.g., $($newControls -join ', ')). Potential conflict."
+            return $true
+        }
+
+        # Case 3: Neither policy blocks. Both grant/require controls.
+        # In CA, multiple matching policies that grant access result in the user needing to satisfy the union of controls.
+        # This is generally not considered a "conflict" but rather a cumulative requirement.
+        # Example: Policy A requires MFA. Policy B requires Compliant Device. User needs both.
+        # A true *impossibility* (e.g., must be MFA AND must NOT be MFA) is not typical with standard builtInControls.
+        if (-not $newIsBlock -and -not $existingIsBlock) {
+            Write-Warning "ControlConflict: Neither policy blocks. Controls are assumed cumulative or alternative (e.g., MFA OR CompliantDevice if Operator is OR). Detailed grant-vs-grant impossibility analysis is not performed. No direct 'block' conflict."
+            return $false
+        }
+
+        # Default case, should ideally not be reached if logic above is complete.
         return $false
     }
 }
