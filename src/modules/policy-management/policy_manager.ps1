@@ -132,42 +132,42 @@ class ConditionalAccessPolicyManager {
         foreach ($prop in $requiredProperties) {
             # Use PSObject.Properties.Name.Contains for robust key check on PSCustomObject or Hashtable
             if (-not $policy.PSObject.Properties.Name.Contains($prop)) {
-                throw "Policy definition $policyDisplayNameForError missing required top-level property: '$prop'."
+                throw "Policy definition ${policyDisplayNameForError} missing required top-level property: '$prop'."
             }
         }
 
         # Validate 'Conditions' structure
         if ($policy.Conditions -isnot [hashtable] -and $policy.Conditions -isnot [pscustomobject]) {
-            throw "Policy $policyDisplayNameForError: property 'Conditions' must be a hashtable or object."
+            throw "Policy ${policyDisplayNameForError}: property 'Conditions' must be a hashtable or object."
         }
         $requiredConditionsKeys = @('Users', 'Applications') # Minimum required condition sets
         foreach ($key in $requiredConditionsKeys) {
             if (-not $policy.Conditions.PSObject.Properties.Name.Contains($key)) {
-                throw "Policy $policyDisplayNameForError: 'Conditions' property missing required sub-property: '$key'."
+                throw "Policy ${policyDisplayNameForError}: 'Conditions' property missing required sub-property: '$($key)'."
             }
             # Check if the sub-property itself is of the correct type (hashtable/object)
             # Accessing $policy.Conditions.$key directly is fine after checking key existence
             if ($policy.Conditions.$key -isnot [hashtable] -and $policy.Conditions.$key -isnot [pscustomobject]) {
-                throw "Policy $policyDisplayNameForError: 'Conditions.$key' must be a hashtable or object."
+                throw "Policy ${policyDisplayNameForError}: 'Conditions.$($key)' must be a hashtable or object."
             }
         }
         # Example deeper check (optional for this pass, but good for robustness):
         # if ($policy.Conditions.Users.PSObject.Properties.Name.Contains('includeUsers') -and
         #     $policy.Conditions.Users.includeUsers -isnot [array]) {
-        #     throw "Policy $policyDisplayNameForError: 'Conditions.Users.includeUsers' should be an array."
+        #     throw "Policy ${policyDisplayNameForError}: 'Conditions.Users.includeUsers' should be an array."
         # }
 
 
         # Validate 'GrantControls' structure
         if ($policy.GrantControls -isnot [hashtable] -and $policy.GrantControls -isnot [pscustomobject]) {
-            throw "Policy $policyDisplayNameForError: property 'GrantControls' must be a hashtable or object."
+            throw "Policy ${policyDisplayNameForError}: property 'GrantControls' must be a hashtable or object."
         }
         if (-not $policy.GrantControls.PSObject.Properties.Name.Contains('Operator')) {
-            throw "Policy $policyDisplayNameForError: 'GrantControls' property missing required sub-property: 'Operator'."
+            throw "Policy ${policyDisplayNameForError}: 'GrantControls' property missing required sub-property: 'Operator'."
         }
         # Graph API is case-sensitive for 'OR'/'AND' for GrantControls.Operator
         if ($policy.GrantControls.Operator -ne 'OR' -and $policy.GrantControls.Operator -ne 'AND') {
-            throw "Policy $policyDisplayNameForError: 'GrantControls.Operator' must be 'OR' or 'AND'. Found: '$($policy.GrantControls.Operator)'."
+            throw "Policy ${policyDisplayNameForError}: 'GrantControls.Operator' must be 'OR' or 'AND'. Found: '$($policy.GrantControls.Operator)'."
         }
         # Typically, if Operator is OR/AND, BuiltInControls should exist, even if empty array for some "grant" scenarios.
         # If Operator is Block, BuiltInControls might be null or not present, as block is the control.
