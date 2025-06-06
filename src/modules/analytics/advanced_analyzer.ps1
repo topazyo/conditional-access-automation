@@ -34,14 +34,12 @@ class AdvancedPolicyAnalyzer {
                 $policyA = $this.AllPolicies[$i]
                 $policyB = $this.AllPolicies[$j]
 
-                # Create a unique key for the pair to avoid A-B, B-A processing and self-comparison (though inner loop starts at i+1)
                 $pairKey = ($policyA.Id, $policyB.Id | Sort-Object) -join '|'
                 if ($checkedPairs.Contains($pairKey)) {
                     continue
                 }
                 $checkedPairs.Add($pairKey) | Out-Null
 
-                # Skip if either policy is not enabled (or 'enabledForReportingButNotEnforced')
                 if ($policyA.State -notin @('enabled', 'enabledForReportingButNotEnforced') -or
                     $policyB.State -notin @('enabled', 'enabledForReportingButNotEnforced')) {
                     Write-Verbose "Skipping pair $($policyA.DisplayName) & $($policyB.DisplayName) as one or both are not enabled."
@@ -49,22 +47,16 @@ class AdvancedPolicyAnalyzer {
                 }
 
                 Write-Verbose "Comparing policy '$($policyA.DisplayName)' with '$($policyB.DisplayName)'"
-
                 $userOverlap = $this.CompareUserConditionOverlap($policyA.Conditions.Users, $policyB.Conditions.Users)
                 $appOverlap = $this.CompareApplicationConditionOverlap($policyA.Conditions.Applications, $policyB.Conditions.Applications)
-                # Location overlap can be added here: $locationOverlap = $this.CompareLocationConditionOverlap(...)
 
-                # Consider it a significant overlap if both user and application conditions overlap to some degree (not 'None')
-                # This definition of "significant" can be refined.
                 if ($userOverlap.OverlapType -ne 'None' -and $appOverlap.OverlapType -ne 'None') {
                     $overlappingConditions = @{
                         Users = $userOverlap.Description
                         Applications = $appOverlap.Description
-                        # Locations = $locationOverlap.Description (if added)
                     }
                     $combinedGrantControlsSummary = $this.SummarizeCombinedGrantControls($policyA.GrantControls, $policyB.GrantControls)
 
-                    # Basic note about interaction
                     $notes = "Policies '$($policyA.DisplayName)' and '$($policyB.DisplayName)' show overlap in user and application scope. "
                     $notes += "Review their grant controls and conditions to ensure intended cumulative effect."
                     if ($userOverlap.OverlapType -eq 'Full' -and $appOverlap.OverlapType -eq 'Full') {
@@ -75,8 +67,8 @@ class AdvancedPolicyAnalyzer {
                         Policies = @("$($policyA.DisplayName) (Id: $($policyA.Id))", "$($policyB.DisplayName) (Id: $($policyB.Id))")
                         OverlappingConditions = $overlappingConditions
                         CombinedGrantControls = $combinedGrantControlsSummary
-                        UserOverlapType = $userOverlap.OverlapType # Store type for filtering
-                        AppOverlapType = $appOverlap.OverlapType   # Store type for filtering
+                        UserOverlapType = $userOverlap.OverlapType
+                        AppOverlapType = $appOverlap.OverlapType
                         Notes = $notes
                     })
                 }
@@ -94,7 +86,7 @@ class AdvancedPolicyAnalyzer {
             ExcludeUsers = @($usersA.ExcludeUsers)
             IncludeGroups = @($usersA.IncludeGroups)
             ExcludeGroups = @($usersA.ExcludeGroups)
-            IncludeGuests = @($usersA.IncludeGuestsOrExternalUsers) # guestsOrExternalUsers, internalGuest, externalMember, serviceProvider
+            IncludeGuests = @($usersA.IncludeGuestsOrExternalUsers)
         }
         $normB = @{
             IncludeUsers = @($usersB.IncludeUsers)
@@ -104,16 +96,13 @@ class AdvancedPolicyAnalyzer {
             IncludeGuests = @($usersB.IncludeGuestsOrExternalUsers)
         }
 
-        $isAAllUsers = $normA.IncludeUsers -contains 'All' -or $normA.IncludeGuests -contains 'all' # Simplified 'All' check
+        $isAAllUsers = $normA.IncludeUsers -contains 'All' -or $normA.IncludeGuests -contains 'all'
         $isBAllUsers = $normB.IncludeUsers -contains 'All' -or $normB.IncludeGuests -contains 'all'
 
         if ($isAAllUsers -and $isBAllUsers) {
-            # TODO: Consider exclusions for a more accurate 'Full'
             return @{ OverlapType = 'Full'; Description = "Both policies target 'All Users' (or all guests)." }
         }
         if ($isAAllUsers) {
-            # Policy A is 'All Users', Policy B is specific. Overlap if B's includes are not fully excluded by A.
-            # Simplified: Assume subset if B has any includes.
             if (($normB.IncludeUsers.Count + $normB.IncludeGroups.Count + $normB.IncludeGuests.Count) > 0) {
                  return @{ OverlapType = 'Subset'; Description = "Policy A targets 'All Users', potentially containing users from Policy B's specific scope ($($normB.IncludeUsers -join ', '), Groups: $($normB.IncludeGroups -join ', '), Guests: $($normB.IncludeGuests -join ', '))." }
             }
@@ -124,7 +113,6 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
-        # Specific users/groups vs specific users/groups (simplified: any intersection in includes)
         $intersectingUsers = Compare-Object $normA.IncludeUsers $normB.IncludeUsers -IncludeEqual -ExcludeDifferent -PassThru
         $intersectingGroups = Compare-Object $normA.IncludeGroups $normB.IncludeGroups -IncludeEqual -ExcludeDifferent -PassThru
         $intersectingGuests = Compare-Object $normA.IncludeGuests $normB.IncludeGuests -IncludeEqual -ExcludeDifferent -PassThru
@@ -155,13 +143,10 @@ class AdvancedPolicyAnalyzer {
         $isBAllApps = $normB.IncludeApplications -contains 'All'
 
         if ($isAAllApps -and $isBAllApps) {
-            # TODO: Consider exclusions for a more accurate 'Full'
             return @{ OverlapType = 'Full'; Description = "Both policies target 'All Applications'." }
         }
         if ($isAAllApps) {
-            if ($normB.IncludeApplications.Count > 0 -and $normB.IncludeApplications[0] -ne 'None') { # Check if B is not explicitly 'None'
-                # Policy A is 'All Apps', Policy B is specific. Overlap if B's includes are not fully excluded by A.
-                # Simplified: Assume subset if B has specific includes.
+            if ($normB.IncludeApplications.Count > 0 -and $normB.IncludeApplications[0] -ne 'None') {
                 return @{ OverlapType = 'Subset'; Description = "Policy A targets 'All Applications', potentially covering applications from Policy B's specific scope ($($normB.IncludeApplications -join ', '))." }
             }
         }
@@ -171,13 +156,12 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
-        # Specific applications vs specific applications (simplified: any intersection in includes)
         $intersectingApps = Compare-Object $normA.IncludeApplications $normB.IncludeApplications -IncludeEqual -ExcludeDifferent -PassThru
 
         if ($intersectingApps.Count -gt 0) {
             $actionsNote = ""
-            if (($normA.IncludeUserActions.Count + $normB.IncludeUserActions.Count) > 0) { # If any policy defines actions
-                if (($normA.IncludeUserActions -join ';') -ne ($normB.IncludeUserActions -join ';')) { # Simple check for different actions
+            if (($normA.IncludeUserActions.Count + $normB.IncludeUserActions.Count) > 0) {
+                if (($normA.IncludeUserActions -join ';') -ne ($normB.IncludeUserActions -join ';')) {
                     $actionsNote = " User actions differ (A: $($normA.IncludeUserActions -join ', '), B: $($normB.IncludeUserActions -join ', '))."
                 } else {
                     $actionsNote = " User actions are similar/identical."
@@ -186,7 +170,6 @@ class AdvancedPolicyAnalyzer {
             return @{ OverlapType = 'Partial'; Description = "Partial overlap on Applications: $(@($intersectingApps) -join ', ').$actionsNote" }
         }
 
-        # If no app overlap, check if both are "includeUserActions" only policies that might overlap
         if ($normA.IncludeApplications.Count -eq 0 -and $normA.IncludeUserActions.Count -gt 0 -and `
             $normB.IncludeApplications.Count -eq 0 -and $normB.IncludeUserActions.Count -gt 0) {
             $intersectingActions = Compare-Object $normA.IncludeUserActions $normB.IncludeUserActions -IncludeEqual -ExcludeDifferent -PassThru
@@ -194,7 +177,6 @@ class AdvancedPolicyAnalyzer {
                  return @{ OverlapType = 'Partial'; Description = "Partial overlap on UserActions only: $(@($intersectingActions) -join ', ')." }
             }
         }
-
 
         return @{ OverlapType = 'None'; Description = "No direct overlap found in included applications or user actions based on simplified check." }
     }
@@ -205,7 +187,7 @@ class AdvancedPolicyAnalyzer {
             $summaryA += "Operator '$($grantsA.Operator)', Controls '$(@($grantsA.BuiltInControls) -join ', ')'"
             if ($null -ne $grantsA.CustomAuthenticationFactors) { $summaryA += ", CustomAuthFactors present."}
         } else {
-            $summaryA += "No grant controls (Block access or allow if conditions met)."
+            $summaryA += "No grant controls (e.g. Block access, or implicit Allow if conditions met but no controls specified)."
         }
 
         $summaryB = "Policy B: "
@@ -213,33 +195,151 @@ class AdvancedPolicyAnalyzer {
             $summaryB += "Operator '$($grantsB.Operator)', Controls '$(@($grantsB.BuiltInControls) -join ', ')'"
              if ($null -ne $grantsB.CustomAuthenticationFactors) { $summaryB += ", CustomAuthFactors present."}
         } else {
-            $summaryB += "No grant controls (Block access or allow if conditions met)."
+            $summaryB += "No grant controls (e.g. Block access, or implicit Allow if conditions met but no controls specified)."
         }
 
         return "$summaryA; $summaryB. Effective controls depend on how conditions of both policies evaluate for a given sign-in and the 'most restrictive' principle for combined grant controls."
     }
 
+    hidden [bool]DoesPolicyApplyToUser([object]$policy, [string]$userUPN) {
+        Write-Warning "User group membership check is not performed in this simplified version of DoesPolicyApplyToUser. Coverage analysis might be incomplete for group-assigned policies."
+        if ($null -eq $policy -or $null -eq $policy.Conditions -or $null -eq $policy.Conditions.Users) { return $false }
+
+        $usersCondition = $policy.Conditions.Users
+        $includeUsers = @($usersCondition.IncludeUsers)
+        $excludeUsers = @($usersCondition.ExcludeUsers)
+        # $includeGuests = @($usersCondition.IncludeGuestsOrExternalUsers) # Simplified: not deeply checking guest types for UPN match
+
+        if (($excludeUsers -contains $userUPN) -or ($excludeUsers -contains 'All')) {
+            return $false
+        }
+        if (($includeUsers -contains $userUPN) -or ($includeUsers -contains 'All')) {
+            # Basic check for guest UPN format if 'All Guests' is targeted by IncludeUsers (less common, usually IncludeGuestsOrExternalUsers)
+            # if ($includeUsers -contains 'AllGuestsOrExternalUsers' -and $userUPN -like "*#EXT#*") { return $true }
+            return $true
+        }
+        # Further checks for IncludeGuestsOrExternalUsers vs UPN format if needed
+        return $false
+    }
+
+    hidden [bool]DoesPolicyApplyToApplication([object]$policy, [string]$appIdentifier) {
+        if ($null -eq $policy -or $null -eq $policy.Conditions -or $null -eq $policy.Conditions.Applications) { return $false }
+
+        $appsCondition = $policy.Conditions.Applications
+        $includeApps = @($appsCondition.IncludeApplications)
+        $excludeApps = @($appsCondition.ExcludeApplications)
+        # $includeUserActions = @($appsCondition.IncludeUserActions) # Not used for this simple check if appIdentifier is primary
+
+        if (($excludeApps -contains $appIdentifier) -or ($excludeApps -contains 'All')) {
+            return $false
+        }
+        if (($includeApps -contains $appIdentifier) -or ($includeApps -contains 'All')) {
+            return $true
+        }
+        return $false
+    }
+
+    hidden [string]SummarizeEffectiveControlsForCoverage([array]$policies) {
+        if ($null -eq $policies -or $policies.Count -eq 0) {
+            return "None"
+        }
+
+        # Check for a blocking policy first
+        foreach ($p_block in $policies) {
+            if ($null -ne $p_block.GrantControls -and (@($p_block.GrantControls.BuiltInControls) -contains 'block')) {
+                return "Blocked (by '$($p_block.DisplayName)')"
+            }
+        }
+
+        $allControls = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        $operators = [System.Collections.Generic.List[string]]::new()
+
+        foreach ($p_grant in $policies) {
+            if ($null -ne $p_grant.GrantControls -and $null -ne $p_grant.GrantControls.BuiltInControls) {
+                $p_grant.GrantControls.BuiltInControls | ForEach-Object { $allControls.Add($_) }
+                if ($p_grant.GrantControls.Operator) {$operators.Add($p_grant.GrantControls.Operator)}
+            }
+        }
+
+        if ($allControls.Count -eq 0) {
+            return "Grant (No specific built-in controls listed)"
+        }
+
+        $controlsString = ($allControls | Sort-Object) -join ", "
+        $operatorSummary = if ($operators.Count -gt 0) { " (Operators involved: $($operators -join ', '))" } else { "" }
+        return "Requires: $controlsString$operatorSummary"
+    }
 
     [hashtable]AnalyzePolicyCoverage([array]$criticalUsers, [array]$criticalApplications) {
-        # INPUT: Uses $this.AllPolicies, plus lists of critical user UPNs and application display names/IDs.
-        # FUNCTIONALITY:
-        # 1. For each critical user/application, determine:
-        #    a. If they are covered by AT LEAST ONE 'enabled' Conditional Access policy.
-        #    b. How many policies apply to them.
-        #    c. What are the effective controls if multiple policies apply (summary).
-        # 2. Highlights:
-        #    a. Critical users/apps NOT covered by any policy.
-        #    b. Critical users/apps covered by an excessive number of policies (potential complexity).
-        # EXAMPLE OUTPUT STRUCTURE:
-        # @{
-        #     UserCoverage = @(
-        #         @{ UserUPN = "user1@domain.com"; IsCovered = $true; PolicyCount = 2; EffectiveControls = "MFA, Compliant Device" }
-        #         @{ UserUPN = "user2@domain.com"; IsCovered = $false; PolicyCount = 0; EffectiveControls = "None" }
-        #     )
-        #     ApplicationCoverage = @( ... ) # Similar structure
-        # }
-        Write-Warning "'AnalyzePolicyCoverage' is not fully implemented. Returns conceptual data."
-        return @{ UserCoverage = @(); ApplicationCoverage = @() }
+        Write-Verbose "Analyzing policy coverage..."
+        if ($null -eq $this.AllPolicies -or $this.AllPolicies.Count -eq 0) {
+            Write-Warning "No policies loaded into AdvancedPolicyAnalyzer. Cannot perform coverage analysis."
+            return @{ UserCoverage = @(); ApplicationCoverage = @() }
+        }
+
+        $activePolicies = $this.AllPolicies | Where-Object { $_.State -eq 'enabled' -or $_.State -eq 'enabledForReportingButNotEnforced' }
+        if ($activePolicies.Count -eq 0) {
+            Write-Warning "No active (enabled or enabledForReportingButNotEnforced) policies found. Coverage will be zero."
+        }
+
+        $userCoverageResults = [System.Collections.Generic.List[object]]::new()
+        $applicationCoverageResults = [System.Collections.Generic.List[object]]::new()
+
+        # User Coverage
+        if ($null -ne $criticalUsers) {
+            foreach ($userUPN in $criticalUsers) {
+                if ([string]::IsNullOrWhiteSpace($userUPN)) { continue }
+                Write-Verbose "Analyzing coverage for user: $userUPN"
+                $applicablePoliciesToCurrentUser = [System.Collections.Generic.List[object]]::new()
+                foreach ($policy in $activePolicies) {
+                    if ($this.DoesPolicyApplyToUser($policy, $userUPN)) {
+                        $applicablePoliciesToCurrentUser.Add($policy)
+                    }
+                }
+                $isCovered = $applicablePoliciesToCurrentUser.Count -gt 0
+                $policyCount = $applicablePoliciesToCurrentUser.Count
+                $controlsSummary = $this.SummarizeEffectiveControlsForCoverage($applicablePoliciesToCurrentUser.ToArray())
+
+                $userCoverageResults.Add([PSCustomObject]@{
+                    UserUPN                  = $userUPN
+                    IsCovered                = $isCovered
+                    AppliedPolicyCount       = $policyCount
+                    EffectiveControlsSummary = $controlsSummary
+                    Policies                 = ($applicablePoliciesToCurrentUser.DisplayName -join "; ")
+                })
+            }
+        }
+
+        # Application Coverage
+        if ($null -ne $criticalApplications) {
+            foreach ($appIdentifier in $criticalApplications) {
+                if ([string]::IsNullOrWhiteSpace($appIdentifier)) { continue }
+                Write-Verbose "Analyzing coverage for application: $appIdentifier"
+                $applicablePoliciesToCurrentApp = [System.Collections.Generic.List[object]]::new()
+                foreach ($policy in $activePolicies) {
+                    if ($this.DoesPolicyApplyToApplication($policy, $appIdentifier)) {
+                        $applicablePoliciesToCurrentApp.Add($policy)
+                    }
+                }
+                $isCovered = $applicablePoliciesToCurrentApp.Count -gt 0
+                $policyCount = $applicablePoliciesToCurrentApp.Count
+                $controlsSummary = $this.SummarizeEffectiveControlsForCoverage($applicablePoliciesToCurrentApp.ToArray())
+
+                $applicationCoverageResults.Add([PSCustomObject]@{
+                    Application              = $appIdentifier
+                    IsCovered                = $isCovered
+                    AppliedPolicyCount       = $policyCount
+                    EffectiveControlsSummary = $controlsSummary
+                    Policies                 = ($applicablePoliciesToCurrentApp.DisplayName -join "; ")
+                })
+            }
+        }
+
+        Write-Verbose "Policy coverage analysis complete."
+        return @{
+            UserCoverage = $userCoverageResults.ToArray()
+            ApplicationCoverage = $applicationCoverageResults.ToArray()
+        }
     }
 
     [hashtable]GeneratePolicyChangeImpactAnalysis([string]$policyId, [datetime]$changeDate) {
