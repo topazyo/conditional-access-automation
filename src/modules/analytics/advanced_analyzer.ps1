@@ -79,106 +79,158 @@ class AdvancedPolicyAnalyzer {
     }
 
     hidden [hashtable]CompareUserConditionOverlap([object]$usersA, [object]$usersB) {
-        if ($null -eq $usersA -or $null -eq $usersB) { return @{ OverlapType = 'Unknown'; Description = "One or both user conditions are null." } }
+        if ($null -eq $usersA -and $null -eq $usersB) { return @{ OverlapType = 'None'; Description = "Both user conditions are null." } }
+        if ($null -eq $usersA) { return @{ OverlapType = 'Unknown'; Description = "Policy A user conditions are null, Policy B is not." } }
+        if ($null -eq $usersB) { return @{ OverlapType = 'Unknown'; Description = "Policy B user conditions are null, Policy A is not." } }
 
-        $normA = @{
-            IncludeUsers = @($usersA.IncludeUsers)
-            ExcludeUsers = @($usersA.ExcludeUsers)
-            IncludeGroups = @($usersA.IncludeGroups)
-            ExcludeGroups = @($usersA.ExcludeGroups)
-            IncludeGuests = @($usersA.IncludeGuestsOrExternalUsers)
-        }
-        $normB = @{
-            IncludeUsers = @($usersB.IncludeUsers)
-            ExcludeUsers = @($usersB.ExcludeUsers)
-            IncludeGroups = @($usersB.IncludeGroups)
-            ExcludeGroups = @($usersB.ExcludeGroups)
-            IncludeGuests = @($usersB.IncludeGuestsOrExternalUsers)
-        }
+        $normalize = { param($items) if($null -eq $items){@()} else {@($items)} }
 
-        $isAAllUsers = $normA.IncludeUsers -contains 'All' -or $normA.IncludeGuests -contains 'all'
-        $isBAllUsers = $normB.IncludeUsers -contains 'All' -or $normB.IncludeGuests -contains 'all'
+        $incUsersA = $normalize.Invoke($usersA.IncludeUsers)
+        $excUsersA = $normalize.Invoke($usersA.ExcludeUsers)
+        $incGroupsA = $normalize.Invoke($usersA.IncludeGroups)
+        $excGroupsA = $normalize.Invoke($usersA.ExcludeGroups)
+        # Simplified guest handling: treat 'all' in IncludeGuestsOrExternalUsers as part of 'All Users' determination
+        $incGuestsA = $normalize.Invoke($usersA.IncludeGuestsOrExternalUsers)
+        # $excGuestsA = $normalize.Invoke($usersA.ExcludeGuestsOrExternalUsers) # Not used in this simplified logic directly
+
+        $incUsersB = $normalize.Invoke($usersB.IncludeUsers)
+        $excUsersB = $normalize.Invoke($usersB.ExcludeUsers)
+        $incGroupsB = $normalize.Invoke($usersB.IncludeGroups)
+        $excGroupsB = $normalize.Invoke($usersB.ExcludeGroups)
+        $incGuestsB = $normalize.Invoke($usersB.IncludeGuestsOrExternalUsers)
+        # $excGuestsB = $normalize.Invoke($usersB.ExcludeGuestsOrExternalUsers)
+
+        $isAAllUsers = ($incUsersA -contains 'All') -or ($incGuestsA -contains 'all')
+        $isBAllUsers = ($incUsersB -contains 'All') -or ($incGuestsB -contains 'all')
+
+        $desc = ""
 
         if ($isAAllUsers -and $isBAllUsers) {
-            return @{ OverlapType = 'Full'; Description = "Both policies target 'All Users' (or all guests)." }
+            $desc = "Both policies target 'All Users'."
+            if (($excUsersA -join ';') -ne ($excUsersB -join ';') -or ($excGroupsA -join ';') -ne ($excGroupsB -join ';')) { # Basic diff of exclusions
+                $desc += " Exclusions differ: Policy A excludes Users:($($excUsersA -join ',')),Groups:($($excGroupsA -join ',')). Policy B excludes Users:($($excUsersB -join ',')),Groups:($($excGroupsB -join ','))."
+            } else {
+                $desc += " Exclusions are identical or both empty."
+            }
+            return @{ OverlapType = 'Full (All Users vs All Users)'; Description = $desc }
         }
-        if ($isAAllUsers) {
-            if (($normB.IncludeUsers.Count + $normB.IncludeGroups.Count + $normB.IncludeGuests.Count) > 0) {
-                 return @{ OverlapType = 'Subset'; Description = "Policy A targets 'All Users', potentially containing users from Policy B's specific scope ($($normB.IncludeUsers -join ', '), Groups: $($normB.IncludeGroups -join ', '), Guests: $($normB.IncludeGuests -join ', '))." }
+
+        if ($isAAllUsers) { # Policy A targets all users, Policy B is specific
+            # Check if Policy B's specific inclusions are effectively excluded by Policy A
+            $bUsersNotExcludedByA = $incUsersB | Where-Object { $_ -notin $excUsersA }
+            $bGroupsNotExcludedByA = $incGroupsB | Where-Object { $_ -notin $excGroupsA }
+            # Simplified guest check: if A is All Users, and B targets specific guests, are those guests excluded in A?
+            # This part remains simplified: if A is All and B includes specific users/groups not explicitly excluded by A's ExcludeUsers/ExcludeGroups, it's a subset.
+            if ($bUsersNotExcludedByA.Count -gt 0 -or $bGroupsNotExcludedByA.Count -gt 0) {
+                return @{ OverlapType = 'Subset (All Users vs Specific)'; Description = "Policy A (All Users) likely contains Policy B's specific scope. Policy A excludes Users:($($excUsersA -join ',')),Groups:($($excGroupsA -join ','))." }
+            } else {
+                 return @{ OverlapType = 'None'; Description = "Policy A (All Users) excludes all specific users/groups targeted by Policy B." }
             }
         }
-        if ($isBAllUsers) {
-            if (($normA.IncludeUsers.Count + $normA.IncludeGroups.Count + $normA.IncludeGuests.Count) > 0) {
-                return @{ OverlapType = 'Subset'; Description = "Policy B targets 'All Users', potentially containing users from Policy A's specific scope ($($normA.IncludeUsers -join ', '), Groups: $($normA.IncludeGroups -join ', '), Guests: $($normA.IncludeGuests -join ', '))." }
+
+        if ($isBAllUsers) { # Policy B targets all users, Policy A is specific
+            $aUsersNotExcludedByB = $incUsersA | Where-Object { $_ -notin $excUsersB }
+            $aGroupsNotExcludedByB = $incGroupsA | Where-Object { $_ -notin $excGroupsB }
+            if ($aUsersNotExcludedByB.Count -gt 0 -or $aGroupsNotExcludedByB.Count -gt 0) {
+                return @{ OverlapType = 'Subset (Specific vs All Users)'; Description = "Policy B (All Users) likely contains Policy A's specific scope. Policy B excludes Users:($($excUsersB -join ',')),Groups:($($excGroupsB -join ','))." }
+            } else {
+                return @{ OverlapType = 'None'; Description = "Policy B (All Users) excludes all specific users/groups targeted by Policy A." }
             }
         }
 
-        $intersectingUsers = Compare-Object $normA.IncludeUsers $normB.IncludeUsers -IncludeEqual -ExcludeDifferent -PassThru
-        $intersectingGroups = Compare-Object $normA.IncludeGroups $normB.IncludeGroups -IncludeEqual -ExcludeDifferent -PassThru
-        $intersectingGuests = Compare-Object $normA.IncludeGuests $normB.IncludeGuests -IncludeEqual -ExcludeDifferent -PassThru
+        # Neither is "All Users": Compare specific scopes
+        $effectiveIncUsersA = $incUsersA | Where-Object { $_ -notin $excUsersA }
+        $effectiveIncGroupsA = $incGroupsA | Where-Object { $_ -notin $excGroupsA }
+        # Not deeply considering $incGuestsA here for specific comparison to avoid overcomplicating without group expansion
 
-        if ($intersectingUsers.Count -gt 0 -or $intersectingGroups.Count -gt 0 -or $intersectingGuests.Count -gt 0) {
-            $details = "Partial overlap on Users: $(@($intersectingUsers) -join ', '), Groups: $(@($intersectingGroups) -join ', '), Guests: $(@($intersectingGuests) -join ', ')"
-            return @{ OverlapType = 'Partial'; Description = $details }
+        $effectiveIncUsersB = $incUsersB | Where-Object { $_ -notin $excUsersB }
+        $effectiveIncGroupsB = $incGroupsB | Where-Object { $_ -notin $excGroupsB }
+
+        $userIntersection = $effectiveIncUsersA | Where-Object { $_ -in $effectiveIncUsersB }
+        $groupIntersection = $effectiveIncGroupsA | Where-Object { $_ -in $effectiveIncGroupsB }
+
+        if ($userIntersection.Count -gt 0 -or $groupIntersection.Count -gt 0) {
+            $desc = "Partial overlap. Common Users: $($userIntersection -join ', '). Common Groups: $($groupIntersection -join ', ')."
+            # Could add unique elements if needed:
+            # $uniqueToAUsers = $effectiveIncUsersA | Where-Object { $_ -notin $effectiveIncUsersB }
+            # $desc += " Policy A unique effective users: $($uniqueToAUsers -join ', ')."
+            return @{ OverlapType = 'Partial'; Description = $desc }
         }
 
-        return @{ OverlapType = 'None'; Description = "No direct overlap found in included users, groups, or guest types based on simplified check." }
+        return @{ OverlapType = 'None'; Description = "No common users or groups found after considering direct exclusions." }
     }
 
     hidden [hashtable]CompareApplicationConditionOverlap([object]$appsA, [object]$appsB) {
-        if ($null -eq $appsA -or $null -eq $appsB) { return @{ OverlapType = 'Unknown'; Description = "One or both application conditions are null." } }
+        if ($null -eq $appsA -and $null -eq $appsB) { return @{ OverlapType = 'None'; Description = "Both application conditions are null." } }
+        if ($null -eq $appsA) { return @{ OverlapType = 'Unknown'; Description = "Policy A application conditions are null, Policy B is not." } }
+        if ($null -eq $appsB) { return @{ OverlapType = 'Unknown'; Description = "Policy B application conditions are null, Policy A is not." } }
 
-        $normA = @{
-            IncludeApplications = @($appsA.IncludeApplications)
-            ExcludeApplications = @($appsA.ExcludeApplications)
-            IncludeUserActions = @($appsA.IncludeUserActions)
-        }
-        $normB = @{
-            IncludeApplications = @($appsB.IncludeApplications)
-            ExcludeApplications = @($appsB.ExcludeApplications)
-            IncludeUserActions = @($appsB.IncludeUserActions)
-        }
+        $normalize = { param($items) if($null -eq $items){@()} else {@($items)} }
 
-        $isAAllApps = $normA.IncludeApplications -contains 'All'
-        $isBAllApps = $normB.IncludeApplications -contains 'All'
+        $incAppsA = $normalize.Invoke($appsA.IncludeApplications)
+        $excAppsA = $normalize.Invoke($appsA.ExcludeApplications)
+        $actionsA = $normalize.Invoke($appsA.IncludeUserActions)
+
+        $incAppsB = $normalize.Invoke($appsB.IncludeApplications)
+        $excAppsB = $normalize.Invoke($appsB.ExcludeApplications)
+        $actionsB = $normalize.Invoke($appsB.IncludeUserActions)
+
+        $isAAllApps = $incAppsA -contains 'All'
+        $isBAllApps = $incAppsB -contains 'All'
+        $desc = ""
 
         if ($isAAllApps -and $isBAllApps) {
-            return @{ OverlapType = 'Full'; Description = "Both policies target 'All Applications'." }
-        }
-        if ($isAAllApps) {
-            if ($normB.IncludeApplications.Count > 0 -and $normB.IncludeApplications[0] -ne 'None') {
-                return @{ OverlapType = 'Subset'; Description = "Policy A targets 'All Applications', potentially covering applications from Policy B's specific scope ($($normB.IncludeApplications -join ', '))." }
+            $desc = "Both policies target 'All Applications'."
+            if (($excAppsA -join ';') -ne ($excAppsB -join ';')) {
+                $desc += " Exclusions differ: Policy A excludes ($($excAppsA -join ', ')), Policy B excludes ($($excAppsB -join ', '))."
+            } else {
+                 $desc += " Exclusions are identical or both empty."
             }
-        }
-        if ($isBAllApps) {
-             if ($normA.IncludeApplications.Count > 0 -and $normA.IncludeApplications[0] -ne 'None') {
-                return @{ OverlapType = 'Subset'; Description = "Policy B targets 'All Applications', potentially covering applications from Policy A's specific scope ($($normA.IncludeApplications -join ', '))." }
-            }
+            return @{ OverlapType = 'Full (All Apps vs All Apps)'; Description = $desc }
         }
 
-        $intersectingApps = Compare-Object $normA.IncludeApplications $normB.IncludeApplications -IncludeEqual -ExcludeDifferent -PassThru
-
-        if ($intersectingApps.Count -gt 0) {
-            $actionsNote = ""
-            if (($normA.IncludeUserActions.Count + $normB.IncludeUserActions.Count) > 0) {
-                if (($normA.IncludeUserActions -join ';') -ne ($normB.IncludeUserActions -join ';')) {
-                    $actionsNote = " User actions differ (A: $($normA.IncludeUserActions -join ', '), B: $($normB.IncludeUserActions -join ', '))."
-                } else {
-                    $actionsNote = " User actions are similar/identical."
-                }
+        if ($isAAllApps) { # Policy A is All Apps, Policy B is specific
+            $bAppsNotExcludedByA = $incAppsB | Where-Object { $_ -notin $excAppsA -and $_ -ne 'None' }
+            if ($bAppsNotExcludedByA.Count -gt 0) {
+                return @{ OverlapType = 'Subset (All Apps vs Specific)'; Description = "Policy A (All Apps) contains Policy B's specific app scope. Policy A excludes ($($excAppsA -join ', '))." }
+            } else {
+                 return @{ OverlapType = 'None'; Description = "Policy A (All Apps) excludes all specific applications targeted by Policy B." }
             }
-            return @{ OverlapType = 'Partial'; Description = "Partial overlap on Applications: $(@($intersectingApps) -join ', ').$actionsNote" }
         }
-
-        if ($normA.IncludeApplications.Count -eq 0 -and $normA.IncludeUserActions.Count -gt 0 -and `
-            $normB.IncludeApplications.Count -eq 0 -and $normB.IncludeUserActions.Count -gt 0) {
-            $intersectingActions = Compare-Object $normA.IncludeUserActions $normB.IncludeUserActions -IncludeEqual -ExcludeDifferent -PassThru
-            if ($intersectingActions.Count -gt 0) {
-                 return @{ OverlapType = 'Partial'; Description = "Partial overlap on UserActions only: $(@($intersectingActions) -join ', ')." }
+        if ($isBAllApps) { # Policy B is All Apps, Policy A is specific
+            $aAppsNotExcludedByB = $incAppsA | Where-Object { $_ -notin $excAppsB -and $_ -ne 'None' }
+            if ($aAppsNotExcludedByB.Count -gt 0) {
+                return @{ OverlapType = 'Subset (Specific vs All Apps)'; Description = "Policy B (All Apps) contains Policy A's specific app scope. Policy B excludes ($($excAppsB -join ', '))." }
+            } else {
+                return @{ OverlapType = 'None'; Description = "Policy B (All Apps) excludes all specific applications targeted by Policy A." }
             }
         }
 
-        return @{ OverlapType = 'None'; Description = "No direct overlap found in included applications or user actions based on simplified check." }
+        # Neither is "All Apps": Compare specific scopes
+        $effectiveIncAppsA = $incAppsA | Where-Object { $_ -notin $excAppsA }
+        $effectiveIncAppsB = $incAppsB | Where-Object { $_ -notin $excAppsB }
+
+        $appIntersection = $effectiveIncAppsA | Where-Object { $_ -in $effectiveIncAppsB -and $_ -ne 'None' }
+
+        if ($appIntersection.Count -gt 0) {
+            $desc = "Partial overlap on applications: $($appIntersection -join ', ')."
+            if (($actionsA -join ';') -ne ($actionsB -join ';')) {
+                $desc += " User Actions differ (A: $($actionsA -join ', '), B: $($actionsB -join ', '))."
+            } elseif ($actionsA.Count -gt 0) {
+                 $desc += " User Actions are similar/identical: $($actionsA -join ', ')."
+            }
+            return @{ OverlapType = 'Partial'; Description = $desc }
+        }
+
+        # Check for user actions overlap if no direct app ID overlap
+        if ($incAppsA.Count -eq 0 -and $actionsA.Count -gt 0 -and $incAppsB.Count -eq 0 -and $actionsB.Count -gt 0) {
+            $actionIntersection = $actionsA | Where-Object { $_ -in $actionsB }
+            if ($actionIntersection.Count -gt 0) {
+                return @{ OverlapType = 'Partial'; Description = "Partial overlap on User Actions only: $($actionIntersection -join ', ')." }
+            }
+        }
+
+        return @{ OverlapType = 'None'; Description = "No common applications found after considering exclusions." }
     }
 
     hidden [string]SummarizeCombinedGrantControls([object]$grantsA, [object]$grantsB) {
@@ -334,20 +386,116 @@ class AdvancedPolicyAnalyzer {
         }
     }
 
-    [hashtable]GeneratePolicyChangeImpactAnalysis([string]$policyId, [datetime]$changeDate) {
-        # INPUT: Specific Policy ID that changed, and the date/time of change. Uses $this.SignInLogs, $this.AuditLogs.
-        # FUNCTIONALITY: (Highly conceptual for a placeholder)
-        # 1. Analyze sign-in patterns (success/failure rates, MFA challenges) for users/apps affected by the policy
-        #    BEFORE and AFTER the $changeDate.
-        # 2. Correlate with audit logs for that specific policy change.
-        # 3. Attempt to quantify or describe the impact of the policy change.
-        # EXAMPLE OUTPUT:
-        # @{
-        #     PolicyName = "Name of Policy ID"
-        #     ChangeDescription = "Details from Audit Log"
-        #     ImpactSummary = "Sign-in failures for affected scope increased by X% after change."
-        # }
-        Write-Warning "'GeneratePolicyChangeImpactAnalysis' is not fully implemented. Returns conceptual data."
-        return @{ PolicyId = $policyId; ImpactSummary = "Conceptual analysis placeholder." }
+    [hashtable]GeneratePolicyChangeImpactAnalysis([string]$policyId, [datetime]$changeDate, [int]$daysWindow = 7) {
+        Write-Verbose "Generating policy change impact analysis for policy ID '$policyId', change date '$changeDate'."
+        if (($null -eq $this.SignInLogs -or $this.SignInLogs.Count -eq 0) -or
+            ($null -eq $this.AuditLogs -or $this.AuditLogs.Count -eq 0)) {
+            Write-Warning "SignInLogs or AuditLogs not available/populated in AdvancedPolicyAnalyzer. Cannot perform change impact analysis."
+            return @{ PolicyId = $policyId; Error = "SignInLogs or AuditLogs not available." }
+        }
+
+        $policyFromState = $this.AllPolicies | Where-Object {$_.Id -eq $policyId} | Select-Object -First 1
+        $policyDisplayName = if ($null -ne $policyFromState) { $policyFromState.DisplayName } else { "Unknown (ID: $policyId)" }
+
+        # Fetch Change Description from Audit Logs
+        $auditLogEntry = $this.AuditLogs |
+            Where-Object { $_.TargetResources -ne $null -and ($_.TargetResources | Where-Object {$_.Id -eq $policyId}).Count -gt 0 -and $_.OperationType -match "policy" } |
+            Sort-Object ActivityDateTime -Descending |
+            Where-Object { $_.ActivityDateTime -le $changeDate } |
+            Select-Object -First 1
+
+        $actor = "Unknown"
+        if ($null -ne $auditLogEntry.InitiatedBy) {
+            if ($null -ne $auditLogEntry.InitiatedBy.User -and -not [string]::IsNullOrEmpty($auditLogEntry.InitiatedBy.User.UserPrincipalName)) {
+                $actor = $auditLogEntry.InitiatedBy.User.UserPrincipalName
+            } elseif ($null -ne $auditLogEntry.InitiatedBy.App -and -not [string]::IsNullOrEmpty($auditLogEntry.InitiatedBy.App.DisplayName)) {
+                $actor = "Application: $($auditLogEntry.InitiatedBy.App.DisplayName)"
+            }
+        }
+        $changeDescription = if ($auditLogEntry) { "Audit: '$($auditLogEntry.ActivityDisplayName)' by $actor at $($auditLogEntry.ActivityDateTime.ToString('o'))" } else { "No specific audit log entry found for this policy ID around the change date." }
+
+        # Define Time Windows
+        $beforeStartDate = $changeDate.AddDays(-$daysWindow).Date # Start of day
+        $beforeEndDate = $changeDate.Date.AddSeconds(-1)          # End of day before change (e.g., 23:59:59)
+        $afterStartDate = $changeDate.Date                       # Start of day of change
+        $afterEndDate = $changeDate.AddDays($daysWindow).Date.AddDays(1).AddSeconds(-1) # End of day, $daysWindow after
+
+        Write-Verbose "Analysis window: Before ($($beforeStartDate.ToString('o')) - $($beforeEndDate.ToString('o'))), After ($($afterStartDate.ToString('o')) - $($afterEndDate.ToString('o')))"
+
+        # Filter Sign-in Logs where the specific policy was applied
+        $relevantSignInLogs = $this.SignInLogs | Where-Object {
+            $_.AppliedConditionalAccessPolicies -ne $null -and ($_.AppliedConditionalAccessPolicies | Where-Object {$_.Id -eq $policyId}).Count -gt 0
+        }
+
+        if ($relevantSignInLogs.Count -eq 0) {
+            Write-Warning "No sign-in logs found where policy '$policyDisplayName' (Id: $policyId) was applied. Cannot analyze impact from processed sign-ins."
+            return @{
+                PolicyName = $policyDisplayName; PolicyId = $policyId; ChangeDate = $changeDate.ToString("o");
+                ChangeAuditEvent = $changeDescription; AnalysisWindowDays = $daysWindow;
+                ImpactSummary = "No sign-in logs found where this policy was applied within the loaded SignInLogs."
+            }
+        } else {
+             Write-Verbose "Found $($relevantSignInLogs.Count) relevant sign-in logs for policy '$policyDisplayName'."
+        }
+
+        $beforeLogs = $relevantSignInLogs | Where-Object { $_.CreatedDateTime -ge $beforeStartDate -and $_.CreatedDateTime -le $beforeEndDate }
+        $afterLogs = $relevantSignInLogs | Where-Object { $_.CreatedDateTime -ge $afterStartDate -and $_.CreatedDateTime -le $afterEndDate }
+        Write-Verbose "Sign-ins before change: $($beforeLogs.Count), Sign-ins after change: $($afterLogs.Count)"
+
+        $beforeMetrics = $this.GetMetricsFromLogs($beforeLogs, $policyId)
+        $afterMetrics = $this.GetMetricsFromLogs($afterLogs, $policyId)
+
+        # Summarize Impact
+        $impactSummary = ""
+        if ($beforeMetrics.TotalSignIns -eq 0 -and $afterMetrics.TotalSignIns -eq 0) {
+            $impactSummary = "No sign-in activity (where this policy applied) found in the 'before' or 'after' periods within the provided logs."
+        } elseif ($beforeMetrics.TotalSignIns -eq 0) {
+            $impactSummary = "No sign-in activity (where this policy applied) found in the 'before' period. After change: Success Rate $($afterMetrics.SuccessRate)%, MFA by this policy: $($afterMetrics.MfaChallengesByThisPolicy)."
+        } elseif ($afterMetrics.TotalSignIns -eq 0) {
+            $impactSummary = "No sign-in activity (where this policy applied) found in the 'after' period. Before change: Success Rate $($beforeMetrics.SuccessRate)%, MFA by this policy: $($beforeMetrics.MfaChallengesByThisPolicy)."
+        } else {
+            $impactSummary = "Sign-in success rate changed from $($beforeMetrics.SuccessRate)% (of $($beforeMetrics.TotalSignIns) sign-ins) to $($afterMetrics.SuccessRate)% (of $($afterMetrics.TotalSignIns) sign-ins). "
+            $impactSummary += "MFA challenges specifically by this policy changed from $($beforeMetrics.MfaChallengesByThisPolicy) to $($afterMetrics.MfaChallengesByThisPolicy)."
+        }
+
+        return @{
+            PolicyName = $policyDisplayName
+            PolicyId = $policyId
+            ChangeDate = $changeDate.ToString("o") # Use ISO 8601 for consistency
+            ChangeAuditEvent = $changeDescription
+            AnalysisWindowDays = $daysWindow
+            MetricsTimeWindow = @{
+                BeforePeriod_Start = $beforeStartDate.ToString("yyyy-MM-dd"); BeforePeriod_End = $beforeEndDate.ToString("yyyy-MM-dd")
+                AfterPeriod_Start = $afterStartDate.ToString("yyyy-MM-dd"); AfterPeriod_End = $afterEndDate.ToString("yyyy-MM-dd")
+            }
+            BeforePeriodMetrics = $beforeMetrics
+            AfterPeriodMetrics = $afterMetrics
+            ImpactSummary = $impactSummary
+            Note = "Impact analysis is based on sign-ins where this policy ID was explicitly listed in AppliedConditionalAccessPolicies."
+        }
+    }
+
+    hidden [hashtable]GetMetricsFromLogs([array]$logs, [string]$policyIdForMfaCheck) {
+        if ($null -eq $logs) { $logs = @() } # Ensure it's an array if null is passed
+        $totalSignIns = $logs.Count
+        $successfulSignIns = ($logs | Where-Object {$_.Status.ErrorCode -eq 0}).Count
+        $failedSignIns = $totalSignIns - $successfulSignIns
+        $successRate = if ($totalSignIns -gt 0) { [math]::Round(($successfulSignIns / $totalSignIns) * 100, 2) } else { 0 }
+
+        $mfaChallengesByThisPolicy = 0
+        if ($null -ne $logs) {
+            $mfaChallengesByThisPolicy = ($logs | Where-Object {
+                $_.AppliedConditionalAccessPolicies -ne $null -and `
+                ($_.AppliedConditionalAccessPolicies | Where-Object {$_.Id -eq $policyIdForMfaCheck -and ($_.EnforcedGrantControls -contains 'mfa' -or $_.EnforcedGrantControls -contains 'multiFactorAuthentication')}).Count -gt 0
+            }).Count
+        }
+
+        return @{
+            TotalSignIns = $totalSignIns
+            SuccessfulSignIns = $successfulSignIns
+            FailedSignIns = $failedSignIns
+            SuccessRate = $successRate
+            MfaChallengesByThisPolicy = $mfaChallengesByThisPolicy
+        }
     }
 }
