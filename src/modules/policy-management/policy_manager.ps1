@@ -290,10 +290,14 @@ class ConditionalAccessPolicyManager {
         Write-Verbose "Final calculated risk score for policy '$($policy.DisplayName)': $riskScore"
 
         # 5. Risk Level Mapping
-        return switch ($riskScore) {
-            { $_ -ge 5 } { 'High' }
-            { $_ -ge 2 } { 'Medium' }
-            default { 'Low' } # Handles scores < 2, including negative scores
+        if ($riskScore -ge 5) {
+            return 'High'
+        }
+        elseif ($riskScore -ge 2) {
+            return 'Medium'
+        }
+        else {
+            return 'Low' # Handles scores < 2, including negative scores
         }
     }
 }
