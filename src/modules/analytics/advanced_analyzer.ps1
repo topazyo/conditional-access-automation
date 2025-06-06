@@ -208,17 +208,13 @@ class AdvancedPolicyAnalyzer {
         $usersCondition = $policy.Conditions.Users
         $includeUsers = @($usersCondition.IncludeUsers)
         $excludeUsers = @($usersCondition.ExcludeUsers)
-        # $includeGuests = @($usersCondition.IncludeGuestsOrExternalUsers) # Simplified: not deeply checking guest types for UPN match
 
         if (($excludeUsers -contains $userUPN) -or ($excludeUsers -contains 'All')) {
             return $false
         }
         if (($includeUsers -contains $userUPN) -or ($includeUsers -contains 'All')) {
-            # Basic check for guest UPN format if 'All Guests' is targeted by IncludeUsers (less common, usually IncludeGuestsOrExternalUsers)
-            # if ($includeUsers -contains 'AllGuestsOrExternalUsers' -and $userUPN -like "*#EXT#*") { return $true }
             return $true
         }
-        # Further checks for IncludeGuestsOrExternalUsers vs UPN format if needed
         return $false
     }
 
@@ -228,7 +224,6 @@ class AdvancedPolicyAnalyzer {
         $appsCondition = $policy.Conditions.Applications
         $includeApps = @($appsCondition.IncludeApplications)
         $excludeApps = @($appsCondition.ExcludeApplications)
-        # $includeUserActions = @($appsCondition.IncludeUserActions) # Not used for this simple check if appIdentifier is primary
 
         if (($excludeApps -contains $appIdentifier) -or ($excludeApps -contains 'All')) {
             return $false
@@ -244,7 +239,6 @@ class AdvancedPolicyAnalyzer {
             return "None"
         }
 
-        # Check for a blocking policy first
         foreach ($p_block in $policies) {
             if ($null -ne $p_block.GrantControls -and (@($p_block.GrantControls.BuiltInControls) -contains 'block')) {
                 return "Blocked (by '$($p_block.DisplayName)')"
@@ -285,7 +279,6 @@ class AdvancedPolicyAnalyzer {
         $userCoverageResults = [System.Collections.Generic.List[object]]::new()
         $applicationCoverageResults = [System.Collections.Generic.List[object]]::new()
 
-        # User Coverage
         if ($null -ne $criticalUsers) {
             foreach ($userUPN in $criticalUsers) {
                 if ([string]::IsNullOrWhiteSpace($userUPN)) { continue }
@@ -310,7 +303,6 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
-        # Application Coverage
         if ($null -ne $criticalApplications) {
             foreach ($appIdentifier in $criticalApplications) {
                 if ([string]::IsNullOrWhiteSpace($appIdentifier)) { continue }
