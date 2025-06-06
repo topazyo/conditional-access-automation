@@ -6,8 +6,9 @@ class AdvancedPolicyAnalyzer {
     hidden [array]$AllPolicies
     hidden [array]$SignInLogs
     hidden [array]$AuditLogs
+    hidden [hashtable]$UserGroupMembershipMap # Stores UPN -> array of Group IDs
 
-    AdvancedPolicyAnalyzer([array]$policies, [array]$signInLogs, [array]$auditLogs) {
+    AdvancedPolicyAnalyzer([array]$policies, [array]$signInLogs, [array]$auditLogs, [hashtable]$userGroupMap = $null) {
         if ($null -eq $policies -or $policies.Count -eq 0) {
             Write-Warning "AdvancedPolicyAnalyzer initialized with no policies. Most analytics functions will not yield results."
         } elseif ($null -eq $policies[0].PSObject.Properties['Id'] -or $null -eq $policies[0].PSObject.Properties['DisplayName']) {
@@ -16,7 +17,14 @@ class AdvancedPolicyAnalyzer {
         $this.AllPolicies = @($policies) # Ensure it's an array
         $this.SignInLogs = $signInLogs
         $this.AuditLogs = $auditLogs
+        $this.UserGroupMembershipMap = $userGroupMap
+
         Write-Verbose "AdvancedPolicyAnalyzer initialized with $($this.AllPolicies.Count) policies."
+        if ($null -ne $this.UserGroupMembershipMap) {
+            Write-Verbose "User group membership map provided with $($this.UserGroupMembershipMap.Count) entries."
+        } else {
+            Write-Verbose "No user group membership map provided."
+        }
     }
 
     [hashtable]GeneratePolicyOverlapReport() {
@@ -47,6 +55,8 @@ class AdvancedPolicyAnalyzer {
                 }
 
                 Write-Verbose "Comparing policy '$($policyA.DisplayName)' with '$($policyB.DisplayName)'"
+                # Pass the UserGroupMembershipMap to the overlap checkers if they are enhanced to use it.
+                # For now, assuming they use their existing logic.
                 $userOverlap = $this.CompareUserConditionOverlap($policyA.Conditions.Users, $policyB.Conditions.Users)
                 $appOverlap = $this.CompareApplicationConditionOverlap($policyA.Conditions.Applications, $policyB.Conditions.Applications)
 
@@ -89,25 +99,21 @@ class AdvancedPolicyAnalyzer {
         $excUsersA = $normalize.Invoke($usersA.ExcludeUsers)
         $incGroupsA = $normalize.Invoke($usersA.IncludeGroups)
         $excGroupsA = $normalize.Invoke($usersA.ExcludeGroups)
-        # Simplified guest handling: treat 'all' in IncludeGuestsOrExternalUsers as part of 'All Users' determination
         $incGuestsA = $normalize.Invoke($usersA.IncludeGuestsOrExternalUsers)
-        # $excGuestsA = $normalize.Invoke($usersA.ExcludeGuestsOrExternalUsers) # Not used in this simplified logic directly
 
         $incUsersB = $normalize.Invoke($usersB.IncludeUsers)
         $excUsersB = $normalize.Invoke($usersB.ExcludeUsers)
         $incGroupsB = $normalize.Invoke($usersB.IncludeGroups)
         $excGroupsB = $normalize.Invoke($usersB.ExcludeGroups)
         $incGuestsB = $normalize.Invoke($usersB.IncludeGuestsOrExternalUsers)
-        # $excGuestsB = $normalize.Invoke($usersB.ExcludeGuestsOrExternalUsers)
 
         $isAAllUsers = ($incUsersA -contains 'All') -or ($incGuestsA -contains 'all')
         $isBAllUsers = ($incUsersB -contains 'All') -or ($incGuestsB -contains 'all')
-
         $desc = ""
 
         if ($isAAllUsers -and $isBAllUsers) {
             $desc = "Both policies target 'All Users'."
-            if (($excUsersA -join ';') -ne ($excUsersB -join ';') -or ($excGroupsA -join ';') -ne ($excGroupsB -join ';')) { # Basic diff of exclusions
+            if (($excUsersA -join ';') -ne ($excUsersB -join ';') -or ($excGroupsA -join ';') -ne ($excGroupsB -join ';')) {
                 $desc += " Exclusions differ: Policy A excludes Users:($($excUsersA -join ',')),Groups:($($excGroupsA -join ',')). Policy B excludes Users:($($excUsersB -join ',')),Groups:($($excGroupsB -join ','))."
             } else {
                 $desc += " Exclusions are identical or both empty."
@@ -115,12 +121,9 @@ class AdvancedPolicyAnalyzer {
             return @{ OverlapType = 'Full (All Users vs All Users)'; Description = $desc }
         }
 
-        if ($isAAllUsers) { # Policy A targets all users, Policy B is specific
-            # Check if Policy B's specific inclusions are effectively excluded by Policy A
+        if ($isAAllUsers) {
             $bUsersNotExcludedByA = $incUsersB | Where-Object { $_ -notin $excUsersA }
             $bGroupsNotExcludedByA = $incGroupsB | Where-Object { $_ -notin $excGroupsA }
-            # Simplified guest check: if A is All Users, and B targets specific guests, are those guests excluded in A?
-            # This part remains simplified: if A is All and B includes specific users/groups not explicitly excluded by A's ExcludeUsers/ExcludeGroups, it's a subset.
             if ($bUsersNotExcludedByA.Count -gt 0 -or $bGroupsNotExcludedByA.Count -gt 0) {
                 return @{ OverlapType = 'Subset (All Users vs Specific)'; Description = "Policy A (All Users) likely contains Policy B's specific scope. Policy A excludes Users:($($excUsersA -join ',')),Groups:($($excGroupsA -join ','))." }
             } else {
@@ -128,7 +131,7 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
-        if ($isBAllUsers) { # Policy B targets all users, Policy A is specific
+        if ($isBAllUsers) {
             $aUsersNotExcludedByB = $incUsersA | Where-Object { $_ -notin $excUsersB }
             $aGroupsNotExcludedByB = $incGroupsA | Where-Object { $_ -notin $excGroupsB }
             if ($aUsersNotExcludedByB.Count -gt 0 -or $aGroupsNotExcludedByB.Count -gt 0) {
@@ -138,11 +141,8 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
-        # Neither is "All Users": Compare specific scopes
         $effectiveIncUsersA = $incUsersA | Where-Object { $_ -notin $excUsersA }
         $effectiveIncGroupsA = $incGroupsA | Where-Object { $_ -notin $excGroupsA }
-        # Not deeply considering $incGuestsA here for specific comparison to avoid overcomplicating without group expansion
-
         $effectiveIncUsersB = $incUsersB | Where-Object { $_ -notin $excUsersB }
         $effectiveIncGroupsB = $incGroupsB | Where-Object { $_ -notin $excGroupsB }
 
@@ -151,9 +151,6 @@ class AdvancedPolicyAnalyzer {
 
         if ($userIntersection.Count -gt 0 -or $groupIntersection.Count -gt 0) {
             $desc = "Partial overlap. Common Users: $($userIntersection -join ', '). Common Groups: $($groupIntersection -join ', ')."
-            # Could add unique elements if needed:
-            # $uniqueToAUsers = $effectiveIncUsersA | Where-Object { $_ -notin $effectiveIncUsersB }
-            # $desc += " Policy A unique effective users: $($uniqueToAUsers -join ', ')."
             return @{ OverlapType = 'Partial'; Description = $desc }
         }
 
@@ -189,7 +186,7 @@ class AdvancedPolicyAnalyzer {
             return @{ OverlapType = 'Full (All Apps vs All Apps)'; Description = $desc }
         }
 
-        if ($isAAllApps) { # Policy A is All Apps, Policy B is specific
+        if ($isAAllApps) {
             $bAppsNotExcludedByA = $incAppsB | Where-Object { $_ -notin $excAppsA -and $_ -ne 'None' }
             if ($bAppsNotExcludedByA.Count -gt 0) {
                 return @{ OverlapType = 'Subset (All Apps vs Specific)'; Description = "Policy A (All Apps) contains Policy B's specific app scope. Policy A excludes ($($excAppsA -join ', '))." }
@@ -197,7 +194,7 @@ class AdvancedPolicyAnalyzer {
                  return @{ OverlapType = 'None'; Description = "Policy A (All Apps) excludes all specific applications targeted by Policy B." }
             }
         }
-        if ($isBAllApps) { # Policy B is All Apps, Policy A is specific
+        if ($isBAllApps) {
             $aAppsNotExcludedByB = $incAppsA | Where-Object { $_ -notin $excAppsB -and $_ -ne 'None' }
             if ($aAppsNotExcludedByB.Count -gt 0) {
                 return @{ OverlapType = 'Subset (Specific vs All Apps)'; Description = "Policy B (All Apps) contains Policy A's specific app scope. Policy B excludes ($($excAppsB -join ', '))." }
@@ -206,7 +203,6 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
-        # Neither is "All Apps": Compare specific scopes
         $effectiveIncAppsA = $incAppsA | Where-Object { $_ -notin $excAppsA }
         $effectiveIncAppsB = $incAppsB | Where-Object { $_ -notin $excAppsB }
 
@@ -222,7 +218,6 @@ class AdvancedPolicyAnalyzer {
             return @{ OverlapType = 'Partial'; Description = $desc }
         }
 
-        # Check for user actions overlap if no direct app ID overlap
         if ($incAppsA.Count -eq 0 -and $actionsA.Count -gt 0 -and $incAppsB.Count -eq 0 -and $actionsB.Count -gt 0) {
             $actionIntersection = $actionsA | Where-Object { $_ -in $actionsB }
             if ($actionIntersection.Count -gt 0) {
@@ -253,21 +248,61 @@ class AdvancedPolicyAnalyzer {
         return "$summaryA; $summaryB. Effective controls depend on how conditions of both policies evaluate for a given sign-in and the 'most restrictive' principle for combined grant controls."
     }
 
-    hidden [bool]DoesPolicyApplyToUser([object]$policy, [string]$userUPN) {
-        Write-Warning "User group membership check is not performed in this simplified version of DoesPolicyApplyToUser. Coverage analysis might be incomplete for group-assigned policies."
+    hidden [bool]DoesPolicyApplyToUser([object]$policy, [string]$userUPN, [array]$userGroupIdsForContext = $null) {
         if ($null -eq $policy -or $null -eq $policy.Conditions -or $null -eq $policy.Conditions.Users) { return $false }
 
         $usersCondition = $policy.Conditions.Users
-        $includeUsers = @($usersCondition.IncludeUsers)
-        $excludeUsers = @($usersCondition.ExcludeUsers)
+        $normalize = { param($items) if($null -eq $items){@()} else {@($items)} }
 
+        $includeUsers = $normalize.Invoke($usersCondition.IncludeUsers)
+        $excludeUsers = $normalize.Invoke($usersCondition.ExcludeUsers)
+        $includeGroups = $normalize.Invoke($usersCondition.IncludeGroups)
+        $excludeGroups = $normalize.Invoke($usersCondition.ExcludeGroups)
+        # $includeGuests = $normalize.Invoke($usersCondition.IncludeGuestsOrExternalUsers) # Not fully utilized in this simplified version yet
+
+        # 1. Direct Exclusions by UPN or 'All'
         if (($excludeUsers -contains $userUPN) -or ($excludeUsers -contains 'All')) {
             return $false
         }
+
+        # 2. Direct Inclusions by UPN or 'All'
         if (($includeUsers -contains $userUPN) -or ($includeUsers -contains 'All')) {
-            return $true
+            # If 'All' users are included, need to check if this specific user is part of group exclusions
+            if ($includeUsers -contains 'All') {
+                if ($null -ne $userGroupIdsForContext -and $userGroupIdsForContext.Count -gt 0) {
+                    $isExcludedByGroup = $excludeGroups | Where-Object { $_ -in $userGroupIdsForContext } | Select-Object -First 1
+                    if ($null -ne $isExcludedByGroup) {
+                        return $false # User is in an excluded group, even if 'All Users' is included
+                    }
+                }
+            }
+            return $true # Direct UPN match or 'All Users' (and not excluded by group if 'All Users')
         }
-        return $false
+
+        # 3. Group Membership Logic
+        if ($includeGroups.Count -gt 0) {
+            if ($null -ne $userGroupIdsForContext -and $userGroupIdsForContext.Count -gt 0) {
+                $intersectingIncludeGroups = $includeGroups | Where-Object { $_ -in $userGroupIdsForContext }
+                if ($intersectingIncludeGroups.Count -gt 0) {
+                    # User is in at least one included group. Now check if they are also in an excluded group for this policy.
+                    $effectivelyAppliedGroup = $intersectingIncludeGroups | Where-Object { $_ -notin $excludeGroups } | Select-Object -First 1
+                    if ($null -ne $effectivelyAppliedGroup) {
+                        return $true # User is in an included group that is not also in an excluded group
+                    }
+                }
+            } else {
+                # Policy targets groups, but no group context for the user was provided.
+                # Cannot definitively say if it applies or not based on groups.
+                # Do not return true here; if no other condition matches, it won't apply.
+                # Warning is good, but can be noisy if called repeatedly. Consider how often to warn.
+                # For this iteration, the warning is outside this specific helper if $this.UserGroupMembershipMap is null for the user.
+            }
+        }
+
+        # TODO: Add IncludeGuestsOrExternalUsers logic if $userUPN matches guest patterns, considering ExcludeGuestsOrExternalUsers
+        # For now, this simplified version relies on UPN/Group matching.
+
+        return $false # Default if no inclusion criteria met or if excluded
     }
 
     hidden [bool]DoesPolicyApplyToApplication([object]$policy, [string]$appIdentifier) {
@@ -326,18 +361,29 @@ class AdvancedPolicyAnalyzer {
         $activePolicies = $this.AllPolicies | Where-Object { $_.State -eq 'enabled' -or $_.State -eq 'enabledForReportingButNotEnforced' }
         if ($activePolicies.Count -eq 0) {
             Write-Warning "No active (enabled or enabledForReportingButNotEnforced) policies found. Coverage will be zero."
+             return @{ UserCoverage = @(); ApplicationCoverage = @() } # Return empty if no active policies
         }
 
         $userCoverageResults = [System.Collections.Generic.List[object]]::new()
         $applicationCoverageResults = [System.Collections.Generic.List[object]]::new()
 
+        # User Coverage
         if ($null -ne $criticalUsers) {
             foreach ($userUPN in $criticalUsers) {
                 if ([string]::IsNullOrWhiteSpace($userUPN)) { continue }
                 Write-Verbose "Analyzing coverage for user: $userUPN"
+
+                $currentUserGroupIds = $null
+                if ($null -ne $this.UserGroupMembershipMap -and $this.UserGroupMembershipMap.ContainsKey($userUPN)) {
+                    $currentUserGroupIds = @($this.UserGroupMembershipMap[$userUPN])
+                    Write-Verbose "Found group membership context for user '$userUPN' (Groups: $($currentUserGroupIds.Count))."
+                } else {
+                    Write-Verbose "No pre-loaded group membership context found for user '$userUPN'. Group-based policy checks will be limited."
+                }
+
                 $applicablePoliciesToCurrentUser = [System.Collections.Generic.List[object]]::new()
                 foreach ($policy in $activePolicies) {
-                    if ($this.DoesPolicyApplyToUser($policy, $userUPN)) {
+                    if ($this.DoesPolicyApplyToUser($policy, $userUPN, $currentUserGroupIds)) {
                         $applicablePoliciesToCurrentUser.Add($policy)
                     }
                 }
@@ -355,6 +401,7 @@ class AdvancedPolicyAnalyzer {
             }
         }
 
+        # Application Coverage (remains unchanged by this subtask)
         if ($null -ne $criticalApplications) {
             foreach ($appIdentifier in $criticalApplications) {
                 if ([string]::IsNullOrWhiteSpace($appIdentifier)) { continue }
