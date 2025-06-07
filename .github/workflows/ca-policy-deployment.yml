@@ -27,6 +27,7 @@ jobs:
         run: |
           Install-Module Microsoft.Graph -Force
           Install-Module Pester -Force
+          Install-Module PowerShell-YAML -Force
           
       - name: Run Policy Validation
         shell: pwsh
