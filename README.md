@@ -106,8 +106,7 @@ Write-Host "Risk assessment report (JSON) generated at $riskReportPath"
 
 ## 📊 Sample Dashboard
 
-![Dashboard Screenshot](docs/images/dashboard-preview.png)
-(Note: The dashboard image above is a placeholder pending actual dashboard implementation.)
+**Dashboard Status:** Azure Monitor Workbook KQL queries are available in `src/modules/reporting/dashboards/policy-monitoring.kql`. The full visual dashboard/GUI is a planned feature (see `docs/ROADMAP.md`).
 
 The built-in monitoring dashboard provides real-time visibility into:
 - Policy effectiveness metrics
