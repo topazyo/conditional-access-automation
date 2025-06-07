@@ -22,19 +22,27 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 function Install-ModuleIfNotExists {
     param (
         [string]$ModuleName,
+        [string]$RequiredVersion = $null, # Add RequiredVersion parameter
         [string]$Scope = "CurrentUser" # Default to CurrentUser, can be AllUsers
     )
 
-    Write-Host "Checking if module '$ModuleName' is installed..."
-    if (Get-Module -ListAvailable -Name $ModuleName) {
-        Write-Host "Module '$ModuleName' is already installed."
+    Write-Host "Checking if module '$ModuleName' (Version: $($RequiredVersion | Out-String | ForEach-Object {$_.Trim()}) ) is installed..." # Updated message
+    # Check if the specific version is installed
+    $moduleInstalled = Get-Module -ListAvailable -Name $ModuleName | Where-Object { $RequiredVersion -eq $null -or $_.Version.ToString() -eq $RequiredVersion }
+
+    if ($moduleInstalled) {
+        Write-Host "Module '$ModuleName' (Version: $($RequiredVersion | Out-String | ForEach-Object {$_.Trim()}) ) is already installed." # Updated message
     } else {
-        Write-Host "Module '$ModuleName' not found. Attempting to install..."
+        Write-Host "Module '$ModuleName' (Version: $($RequiredVersion | Out-String | ForEach-Object {$_.Trim()}) ) not found or version mismatch. Attempting to install/update..." # Updated message
         try {
-            Install-Module $ModuleName -Scope $Scope -Force -Confirm:$false -ErrorAction Stop
-            Write-Host "Module '$ModuleName' installed successfully."
+            if ($RequiredVersion) {
+                Install-Module $ModuleName -RequiredVersion $RequiredVersion -Scope $Scope -Force -Confirm:$false -ErrorAction Stop
+            } else {
+                Install-Module $ModuleName -Scope $Scope -Force -Confirm:$false -ErrorAction Stop
+            }
+            Write-Host "Module '$ModuleName' (Version: $($RequiredVersion | Out-String | ForEach-Object {$_.Trim()}) ) installed/updated successfully." # Updated message
         } catch {
-            Write-Error "Failed to install module '$ModuleName'. Error: $($_.Exception.Message)"
+            Write-Error "Failed to install module '$ModuleName' (Version: $($RequiredVersion | Out-String | ForEach-Object {$_.Trim()}) ). Error: $($_.Exception.Message)" # Updated message
             Write-Warning "If installing for 'AllUsers', please ensure you are running this script with Administrator privileges."
         }
     }
@@ -43,11 +51,11 @@ function Install-ModuleIfNotExists {
 # Install Microsoft.Graph SDK
 # This module is used for interacting with Microsoft Graph API.
 # Installing for AllUsers is common for SDKs and often requires admin rights.
-Install-ModuleIfNotExists -ModuleName "Microsoft.Graph" -Scope "AllUsers"
+Install-ModuleIfNotExists -ModuleName "Microsoft.Graph" -RequiredVersion "2.10.0" -Scope "AllUsers"
 
 # Install Pester
 # Pester is a testing framework for PowerShell.
 # Typically installed for the current user for development and testing purposes.
-Install-ModuleIfNotExists -ModuleName "Pester" -Scope "CurrentUser"
+Install-ModuleIfNotExists -ModuleName "Pester" -RequiredVersion "5.5.0" -Scope "CurrentUser"
 
 Write-Host "Dependency installation script finished."

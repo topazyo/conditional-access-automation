@@ -49,7 +49,7 @@ cd ca-automation
 
 2. Install required PowerShell modules:
 ```powershell
-./scripts/setup/install-dependencies.ps1
+./scripts/setup/Install-ProjectDependencies.ps1
 ```
 
 3. Configure your environment:
@@ -62,7 +62,7 @@ Copy-Item .env.example .env
 
 1. **Basic Policy Deployment**
 ```powershell
-Import-Module ./src/modules/policy-management/policy_manager.ps1
+Import-Module ./src/modules/policy-management/PolicyManager.ps1
 
 $policyManager = [ConditionalAccessPolicyManager]::new($TenantId)
 $policyManager.DeployPolicy("./templates/policies/security-baseline.yaml")
@@ -70,7 +70,7 @@ $policyManager.DeployPolicy("./templates/policies/security-baseline.yaml")
 
 2. **Compliance Assessment**
 ```powershell
-Import-Module ./src/modules/compliance/compliance_manager.ps1 # Ensure module is imported
+Import-Module ./src/modules/compliance/ComplianceManager.ps1 # Ensure module is imported
 
 $complianceManager = [ComplianceManager]::new($TenantId)
 # For custom frameworks: $customFrameworks = @{...}; $complianceManager = [ComplianceManager]::new($TenantId, $customFrameworks)
@@ -83,8 +83,8 @@ Write-Host "Compliance report generated at $reportOutputPath"
 
 3. **Risk Analysis**
 ```powershell
-Import-Module ./src/modules/risk/risk_assessor.ps1 # Ensure module is imported
-Import-Module ./src/modules/policy-management/policy_manager.ps1 # To get policies
+Import-Module ./src/modules/risk/RiskAssessor.ps1 # Ensure module is imported
+Import-Module ./src/modules/policy-management/PolicyManager.ps1 # To get policies
 
 $policyMgr = [ConditionalAccessPolicyManager]::new($TenantId)
 # Get-MgIdentityConditionalAccessPolicy requires Graph connection, PolicyManager handles this.

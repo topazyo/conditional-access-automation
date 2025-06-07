@@ -2,7 +2,7 @@
 # Test suite for src/modules/validation/policy_validator.ps1
 
 BeforeAll {
-    Import-Module $PSScriptRoot/../../src/modules/validation/policy_validator.ps1 -Force
+    Import-Module $PSScriptRoot/../../src/modules/validation/PolicyValidator.ps1 -Force
 
     # Global Mocks
     Mock Get-MgIdentityConditionalAccessPolicy {
