@@ -38,6 +38,115 @@ BeforeAll {
             SessionControls = $SessionControls
         }
     }
+
+    Context 'ValidatePolicies Method' {
+        $validatorInstance = $null
+        $mockPolicyDef1 = $script:NewMockPolicyDefinition -DisplayName "PolicyDef1"
+        $mockPolicyDef2 = $script:NewMockPolicyDefinition -DisplayName "PolicyDef2_Invalid"
+        $mockPolicyDef3 = $script:NewMockPolicyDefinition -DisplayName "PolicyDef3_Warning"
+
+        BeforeEach {
+            $validatorInstance = [PolicyValidator]::new()
+            # Clear any script-scoped warning/error collectors if used by mocks
+            # $script:CapturedWarnings = [System.Collections.Generic.List[string]]::new()
+            # $script:CapturedErrors = [System.Collections.Generic.List[string]]::new()
+        }
+
+        It 'Handles null or empty input array gracefully' {
+            $resultNull = $validatorInstance.ValidatePolicies($null)
+            $resultNull.HasErrors.Should().BeFalse()
+            $resultNull.TotalPoliciesProcessed.Should().Be(0)
+
+            $resultEmpty = $validatorInstance.ValidatePolicies(@())
+            $resultEmpty.HasErrors.Should().BeFalse()
+            $resultEmpty.TotalPoliciesProcessed.Should().Be(0)
+        }
+
+        It 'Processes an array with one valid policy definition' {
+            Mock ($validatorInstance).ValidatePolicy -MockWith {
+                param($policyInput)
+                # Simulate ValidatePolicy returning a valid result
+                return @{ IsValid = $true; Errors = @(); Warnings = @(); Recommendations = @() }
+            }
+
+            $result = $validatorInstance.ValidatePolicies(@($mockPolicyDef1))
+            $result.HasErrors.Should().BeFalse()
+            $result.TotalPoliciesProcessed.Should().Be(1)
+            $result.TotalErrorsFound.Should().Be(0)
+            $result.AllErrorMessages.Should().BeEmpty()
+        }
+
+        It 'Processes an array with one invalid policy definition (error from ValidatePolicy)' {
+             Mock ($validatorInstance).ValidatePolicy -MockWith {
+                param($policyInput)
+                # Simulate ValidatePolicy returning an invalid result
+                return @{ IsValid = $false; Errors = @("Mocked Error1"); Warnings = @("Mocked Warn1"); Recommendations = @("Mocked Reco1") }
+            }
+
+            $result = $validatorInstance.ValidatePolicies(@($mockPolicyDef2))
+            $result.HasErrors.Should().BeTrue()
+            $result.TotalPoliciesProcessed.Should().Be(1)
+            $result.TotalErrorsFound.Should().Be(1)
+            $result.AllErrorMessages[0].Should().Contain("Policy '$($mockPolicyDef2.DisplayName)' Error: Mocked Error1")
+            $result.AllWarningMessages[0].Should().Contain("Policy '$($mockPolicyDef2.DisplayName)' Warning: Mocked Warn1")
+            $result.AllRecommendationMessages[0].Should().Contain("Policy '$($mockPolicyDef2.DisplayName)' Recommendation: Mocked Reco1")
+        }
+
+        It 'Processes an array with one policy definition that causes ValidatePolicy to throw' {
+            $policyDefThrows = $script:NewMockPolicyDefinition -DisplayName "PolicyCausesThrow"
+            # This mock simulates ValidatePolicy throwing an exception (e.g., due to fundamental structure issue caught by ValidatePolicyDefinition if it were called inside)
+            Mock ($validatorInstance).ValidatePolicy -MockWith {
+                param($policyInput)
+                throw "Fundamental validation failed for $($policyInput.DisplayName)"
+            }
+
+            $result = $validatorInstance.ValidatePolicies(@($policyDefThrows))
+            $result.HasErrors.Should().BeTrue()
+            $result.TotalPoliciesProcessed.Should().Be(1)
+            $result.TotalErrorsFound.Should().Be(1)
+            $result.AllErrorMessages[0].Should().Contain("Policy '$($policyDefThrows.DisplayName)' failed validation with an unexpected exception: Fundamental validation failed for $($policyDefThrows.DisplayName)")
+        }
+
+        It 'Aggregates results correctly from multiple policy definitions' {
+            $policyDefValid = $script:NewMockPolicyDefinition -DisplayName "ValidDef"
+            $policyDefInvalid = $script:NewMockPolicyDefinition -DisplayName "InvalidDef"
+            $policyDefWarning = $script:NewMockPolicyDefinition -DisplayName "WarningDef"
+
+            Mock ($validatorInstance).ValidatePolicy -MockWith {
+                param($pd)
+                if ($pd.DisplayName -eq "ValidDef") { return @{ IsValid = $true; Errors = @(); Warnings = @(); Recommendations = @() } }
+                if ($pd.DisplayName -eq "InvalidDef") { return @{ IsValid = $false; Errors = @("Error for InvalidDef"); Warnings = @(); Recommendations = @() } }
+                if ($pd.DisplayName -eq "WarningDef") { return @{ IsValid = $true; Errors = @(); Warnings = @("Warning for WarningDef"); Recommendations = @() } }
+            }
+
+            $result = $validatorInstance.ValidatePolicies(@($policyDefValid, $policyDefInvalid, $policyDefWarning))
+            $result.HasErrors.Should().BeTrue()
+            $result.TotalPoliciesProcessed.Should().Be(3)
+            $result.TotalErrorsFound.Should().Be(1)
+            $result.TotalWarningsFound.Should().Be(1)
+            $result.TotalRecommendationsFound.Should().Be(0)
+            $result.AllErrorMessages.Should().ContainMatch("Policy 'InvalidDef' Error: Error for InvalidDef")
+            $result.AllWarningMessages.Should().ContainMatch("Policy 'WarningDef' Warning: Warning for WarningDef")
+        }
+
+        It 'Handles policy definitions that are null or not hashtables within the input array' {
+            $validPolicy = $script:NewMockPolicyDefinition -DisplayName "GoodPolicy"
+             Mock ($validatorInstance).ValidatePolicy -MockWith {
+                param($policyInput)
+                if ($policyInput.DisplayName -eq "GoodPolicy") {
+                    return @{ IsValid = $true; Errors = @(); Warnings = @(); Recommendations = @() }
+                }
+                # Should not be called for null or string
+            }
+
+            $result = $validatorInstance.ValidatePolicies(@($validPolicy, $null, "not a hashtable"))
+            $result.HasErrors.Should().BeTrue() # Because of the null and string entries
+            $result.TotalPoliciesProcessed.Should().Be(3)
+            $result.TotalErrorsFound.Should().Be(2) # One for null, one for string
+            $result.AllErrorMessages.Should().ContainMatch("Policy 'Unnamed Policy (index 1)' is null or not a valid object. Skipping.")
+            $result.AllErrorMessages.Should().ContainMatch("Policy 'Unnamed Policy (index 2)' is null or not a valid object. Skipping.")
+        }
+    }
 }
 
 AfterAll {

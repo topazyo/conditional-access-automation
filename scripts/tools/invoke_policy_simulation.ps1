@@ -5,7 +5,7 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateScript({Test-Path $_ -PathType Leaf -ErrorAction Stop})] # Added ValidateScript
+    [ValidateScript({Test-Path $_ -PathType Leaf -ErrorAction Stop})]
     [string]$PolicyDefinitionPath,
 
     [Parameter(Mandatory=$true)]
@@ -15,20 +15,21 @@ param(
     [string]$SimUserLocationId,
 
     [Parameter(Mandatory=$false)]
+    [ValidateSet('android', 'iOS', 'windows', 'macOS', 'linux', 'all', IgnoreCase = $true)]
     [string]$SimUserDevicePlatform,
 
     [Parameter(Mandatory=$false)]
-    [string]$SimUserDeviceState,
+    [string]$SimUserDeviceState, # Not evaluated in this version
 
     [Parameter(Mandatory=$true)]
     [string]$SimApplicationId,
 
     [Parameter(Mandatory=$false)]
-    [ValidateSet('low', 'medium', 'high', IgnoreCase = $true)] # Added ValidateSet for risk levels
+    [ValidateSet('low', 'medium', 'high', 'noRisk', IgnoreCase = $true)] # Added noRisk as it's a valid CA value
     [string]$SimSignInRiskLevel,
 
     [Parameter(Mandatory=$false)]
-    [ValidateSet('low', 'medium', 'high', IgnoreCase = $true)]
+    [ValidateSet('low', 'medium', 'high', 'noRisk', 'none', IgnoreCase = $true)] # Added noRisk, none as valid CA values
     [string]$SimUserRiskLevel
 )
 
@@ -36,71 +37,119 @@ param(
 function Test-UserConditionMatch {
     param(
         [Parameter(Mandatory=$true)]
-        [object]$userConditions, # Expects $PolicyToSimulate.Conditions.Users object
+        [object]$userConditions,
         [Parameter(Mandatory=$true)]
         [string]$simUserUPN
     )
-
-    if ($null -eq $userConditions) {
-        Write-Verbose "User condition in policy is null, considered a match for this aspect."
-        return $true # No user condition specified in policy means it applies to users from this perspective
-    }
-
+    if ($null -eq $userConditions) { Write-Verbose "User condition: Policy defines no user conditions (applies to all users from this aspect)."; return $true }
     $includeUsers = @($userConditions.IncludeUsers)
     $excludeUsers = @($userConditions.ExcludeUsers)
-    # Groups and Roles are not evaluated in this simplified version
-    # GuestsOrExternalUsers are not evaluated in this simplified version
-
-    if (($excludeUsers -contains $simUserUPN) -or ($excludeUsers -contains 'All')) {
-        Write-Verbose "User Condition: User '$simUserUPN' is EXCLUDED by direct UPN or 'All'."
-        return $false
-    }
-    if (($includeUsers -contains $simUserUPN) -or ($includeUsers -contains 'All')) {
-        Write-Verbose "User Condition: User '$simUserUPN' is INCLUDED by direct UPN or 'All'."
-        return $true
-    }
-
-    # If IncludeUsers is not 'All' and UPN is not directly in IncludeUsers, then it doesn't match based on users.
-    # (Ignoring groups/roles for this simplified version)
-    Write-Verbose "User Condition: User '$simUserUPN' not explicitly included and not 'All Users'. (Group/Role conditions not evaluated here)"
-    return $false
+    if (($excludeUsers -contains $simUserUPN) -or ($excludeUsers -contains 'All')) { Write-Verbose "User Condition: User '$simUserUPN' EXCLUDED."; return $false }
+    if (($includeUsers -contains $simUserUPN) -or ($includeUsers -contains 'All')) { Write-Verbose "User Condition: User '$simUserUPN' INCLUDED."; return $true }
+    Write-Verbose "User Condition: User '$simUserUPN' not explicitly included/excluded by UPN (group/role conditions not evaluated here)."
+    return $false # Default if not explicitly included by UPN or 'All' (and not excluded)
 }
 
 function Test-ApplicationConditionMatch {
     param(
         [Parameter(Mandatory=$true)]
-        [object]$appConditions, # Expects $PolicyToSimulate.Conditions.Applications object
+        [object]$appConditions,
         [Parameter(Mandatory=$true)]
         [string]$simApplicationId
     )
-
-    if ($null -eq $appConditions) {
-        Write-Verbose "Application condition in policy is null, considered a match for this aspect."
-        return $true # No app condition specified means it applies to apps from this perspective
-    }
-
+    if ($null -eq $appConditions) { Write-Verbose "Application condition: Policy defines no app conditions (applies to all apps from this aspect)."; return $true }
     $includeApplications = @($appConditions.IncludeApplications)
     $excludeApplications = @($appConditions.ExcludeApplications)
-    # UserActions are not evaluated in this simplified version
+    if (($excludeApplications -contains $simApplicationId) -or ($excludeApplications -contains 'All')) { Write-Verbose "Application Condition: App '$simApplicationId' EXCLUDED."; return $false }
+    if (($includeApplications -contains $simApplicationId) -or ($includeApplications -contains 'All')) { Write-Verbose "Application Condition: App '$simApplicationId' INCLUDED."; return $true }
+    Write-Verbose "Application Condition: App '$simApplicationId' not explicitly included/excluded."
+    return $false # Default if not explicitly included by AppID or 'All' (and not excluded)
+}
 
-    if (($excludeApplications -contains $simApplicationId) -or ($excludeApplications -contains 'All')) {
-        Write-Verbose "Application Condition: App '$simApplicationId' is EXCLUDED by ID or 'All'."
+function Test-LocationConditionMatch {
+    param(
+        [Parameter(Mandatory=$true)]
+        [object]$locationConditions,
+        [Parameter(Mandatory=$false)]
+        [string]$simUserLocationId
+    )
+    if ($null -eq $locationConditions -or ($null -eq $locationConditions.IncludeLocations -and $null -eq $locationConditions.ExcludeLocations)) { Write-Verbose "Location condition: Policy defines no location conditions."; return $true }
+    if ([string]::IsNullOrEmpty($simUserLocationId)) { Write-Verbose "Location condition: Simulated user location not provided; cannot match specific location conditions."; return $true } # Or false if policy requires specific location? For now, true.
+
+    $includeLocations = @($locationConditions.IncludeLocations)
+    $excludeLocations = @($locationConditions.ExcludeLocations)
+
+    if (($excludeLocations -contains $simUserLocationId) -or ($excludeLocations -contains 'All')) { Write-Verbose "Location Condition: Location '$simUserLocationId' EXCLUDED."; return $false }
+
+    # If 'AllTrusted' is included and user provides a location, we cannot verify its trusted status here.
+    # For this simulation, if policy includes 'AllTrusted', we assume any provided user location could be one of them.
+    # This is a known limitation of local simulation.
+    if ($includeLocations -contains 'AllTrusted') { Write-Verbose "Location Condition: Policy includes 'AllTrusted'. Assuming simulated location '$simUserLocationId' COULD BE trusted (local sim limitation)."; return $true }
+
+    if (($includeLocations -contains $simUserLocationId) -or ($includeLocations -contains 'All')) { Write-Verbose "Location Condition: Location '$simUserLocationId' INCLUDED."; return $true }
+
+    if ($includeLocations.Count -gt 0 -and -not ($includeLocations -contains 'All') -and -not ($includeLocations -contains 'AllTrusted')) {
+        Write-Verbose "Location Condition: Location '$simUserLocationId' not in policy's included locations: $($includeLocations -join ', ')."
+        return $false # Policy requires specific locations, and sim location doesn't match
+    }
+    return $true # Default if no specific include implies match, or if only exclusions were specified and sim location wasn't excluded.
+}
+
+function Test-PlatformConditionMatch {
+    param(
+        [Parameter(Mandatory=$true)]
+        [object]$platformConditions,
+        [Parameter(Mandatory=$false)]
+        [string]$simUserDevicePlatform
+    )
+    if ($null -eq $platformConditions -or ($null -eq $platformConditions.IncludePlatforms -and $null -eq $platformConditions.ExcludePlatforms)) { Write-Verbose "Platform condition: Policy defines no platform conditions."; return $true }
+    if ([string]::IsNullOrEmpty($simUserDevicePlatform)) { Write-Verbose "Platform condition: Simulated device platform not provided; cannot match specific platform conditions."; return $true } # Or false? For now, true.
+
+    $includePlatforms = @($platformConditions.IncludePlatforms)
+    $excludePlatforms = @($platformConditions.ExcludePlatforms)
+
+    if (($excludePlatforms -contains $simUserDevicePlatform) -or ($excludePlatforms -contains 'all')) { Write-Verbose "Platform Condition: Platform '$simUserDevicePlatform' EXCLUDED."; return $false } # 'all' is a keyword for platforms too
+    if (($includePlatforms -contains $simUserDevicePlatform) -or ($includePlatforms -contains 'all')) { Write-Verbose "Platform Condition: Platform '$simUserDevicePlatform' INCLUDED."; return $true }
+
+    if ($includePlatforms.Count -gt 0 -and -not ($includePlatforms -contains 'all')) {
+         Write-Verbose "Platform Condition: Platform '$simUserDevicePlatform' not in policy's included platforms: $($includePlatforms -join ', ')."
+        return $false # Policy requires specific platforms, and sim platform doesn't match
+    }
+    return $true # Default if no specific include implies match, or only exclusions specified.
+}
+
+function Test-RiskLevelConditionMatch {
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$policyRiskLevels, # e.g., $PolicyToSimulate.Conditions.SignInRiskLevels
+        [Parameter(Mandatory=$false)]
+        [string]$simRiskLevel,
+        [Parameter(Mandatory=$true)]
+        [string]$riskTypeForLogging # e.g., "Sign-in" or "User"
+    )
+    $policyRiskLevelsNormalized = @($policyRiskLevels) # Ensure array even if single or null
+
+    if ($policyRiskLevelsNormalized.Count -eq 0) { Write-Verbose "$riskTypeForLogging Risk condition: Policy defines no $riskTypeForLogging risk conditions."; return $true } # Policy doesn't care
+
+    # If policy specifies risk, simulation must provide a risk level for evaluation
+    if ([string]::IsNullOrEmpty($simRiskLevel)) {
+        Write-Verbose "$riskTypeForLogging Risk condition: Policy requires $riskTypeForLogging risk, but no simulated $riskTypeForLogging risk level provided. Condition evaluated as NOT met."
         return $false
     }
-    if (($includeApplications -contains $simApplicationId) -or ($includeApplications -contains 'All')) {
-        Write-Verbose "Application Condition: App '$simApplicationId' is INCLUDED by ID or 'All'."
+
+    if ($policyRiskLevelsNormalized -contains $simRiskLevel) { # Comparison is case-insensitive by default for -contains with strings
+        Write-Verbose "$riskTypeForLogging Risk condition: Simulated risk '$simRiskLevel' MATCHES policy levels ($($policyRiskLevelsNormalized -join ', '))."
         return $true
     }
 
-    # If IncludeApplications is not 'All' and AppID is not directly in IncludeApplications.
-    Write-Verbose "Application Condition: App '$simApplicationId' not explicitly included and not 'All Applications'."
+    Write-Verbose "$riskTypeForLogging Risk condition: Simulated risk '$simRiskLevel' does NOT MATCH policy levels ($($policyRiskLevelsNormalized -join ', '))."
     return $false
 }
 
 
 # --- SCRIPT MAIN LOGIC ---
 Write-Host "Starting Policy Simulation for User: $SimUserPrincipalName, Application: $SimApplicationId" -ForegroundColor Cyan
-Write-Warning "DISCLAIMER: This is a simplified local simulation, not a substitute for Azure AD 'What If'. It primarily checks User and Application conditions based on direct UPN/AppID matches and 'All' scopes. Group memberships, roles, device states, locations, and risk levels are NOT fully evaluated by this version unless explicitly added."
+Write-Warning "DISCLAIMER: This is a simplified local simulation, not a substitute for Azure AD 'What If'. It primarily checks User, Application, Location, Platform, and Risk Level conditions based on direct matches and 'All' scopes. Group memberships, roles, and detailed device states are NOT fully evaluated by this version unless explicitly added."
 
 # --- 1. LOAD AND VALIDATE POLICY DEFINITION ---
 Write-Host "`n--- Loading Policy Definition ---" -ForegroundColor Green
@@ -122,7 +171,7 @@ if ($null -eq $PolicyToSimulate -or -not $PolicyToSimulate.PSObject.Properties['
 Write-Host "Policy to Simulate: '$($PolicyToSimulate.DisplayName)' (State: $($PolicyToSimulate.State))"
 
 
-# --- 2. GATHER CONTEXTUAL DATA (Conceptual - requires actual implementation) ---
+# --- 2. GATHER CONTEXTUAL DATA (Conceptual) ---
 Write-Host "`n--- Contextual Data (Conceptual) ---" -ForegroundColor Green
 Write-Host "[Conceptual] Fetching user groups, existing relevant policies for full 'What If' is not implemented in this version."
 $existingApplicablePolicies = @()
@@ -132,32 +181,42 @@ $existingApplicablePolicies = @()
 Write-Host "`n--- Policy Evaluation (Simulated) ---" -ForegroundColor Green
 $userMatch = Test-UserConditionMatch -userConditions $PolicyToSimulate.Conditions.Users -simUserUPN $SimUserPrincipalName
 $applicationMatch = Test-ApplicationConditionMatch -appConditions $PolicyToSimulate.Conditions.Applications -simApplicationId $SimApplicationId
-# Add other condition checks here as implemented:
-# $locationMatch = Test-LocationConditionMatch ...
-# $deviceMatch = Test-DeviceConditionMatch ...
-# $signInRiskMatch = Test-SignInRiskConditionMatch ...
-# $userRiskMatch = Test-UserRiskConditionMatch ...
+$locationMatch = Test-LocationConditionMatch -locationConditions $PolicyToSimulate.Conditions.Locations -simUserLocationId $SimUserLocationId
+$platformMatch = Test-PlatformConditionMatch -platformConditions $PolicyToSimulate.Conditions.Platforms -simUserDevicePlatform $SimUserDevicePlatform
+$signInRiskMatch = Test-RiskLevelConditionMatch -policyRiskLevels $PolicyToSimulate.Conditions.SignInRiskLevels -simRiskLevel $SimSignInRiskLevel -riskTypeForLogging "Sign-in"
+$userRiskMatch = Test-RiskLevelConditionMatch -policyRiskLevels $PolicyToSimulate.Conditions.UserRiskLevels -simRiskLevel $SimUserRiskLevel -riskTypeForLogging "User"
 
-$allConditionsMet = $userMatch -and $applicationMatch # Currently only these two are checked
+Write-Host "Device Filter/State Condition: Not evaluated by this script version." # Placeholder for $SimUserDeviceState
+
+$allConditionsMet = $userMatch -and $applicationMatch -and $locationMatch -and $platformMatch -and $signInRiskMatch -and $userRiskMatch
 
 # --- 4. OUTPUT RESULT ---
 Write-Host "`n--- Policy Evaluation Result ---" -ForegroundColor Cyan
 Write-Host "Policy: '$($PolicyToSimulate.DisplayName)'"
 Write-Host "Simulated User UPN: $SimUserPrincipalName"
 Write-Host "Simulated Application ID: $SimApplicationId"
-# (Add lines for other simulated conditions if they were used in checks)
+Write-Host "Simulated Location ID: $(if ($SimUserLocationId) {$SimUserLocationId} else {'Not Provided'})"
+Write-Host "Simulated Device Platform: $(if ($SimUserDevicePlatform) {$SimUserDevicePlatform} else {'Not Provided'})"
+Write-Host "Simulated Sign-in Risk: $(if ($SimSignInRiskLevel) {$SimSignInRiskLevel} else {'Not Provided'})"
+Write-Host "Simulated User Risk: $(if ($SimUserRiskLevel) {$SimUserRiskLevel} else {'Not Provided'})"
+Write-Host "---"
 Write-Host "User Condition Met: $userMatch"
 Write-Host "Application Condition Met: $applicationMatch"
+Write-Host "Location Condition Met: $locationMatch"
+Write-Host "Platform Condition Met: $platformMatch"
+Write-Host "Sign-in Risk Condition Met: $signInRiskMatch"
+Write-Host "User Risk Condition Met: $userRiskMatch"
+
 
 if ($allConditionsMet) {
-    Write-Host "Outcome: Policy WOULD LIKELY APPLY based on simulated User and Application conditions." -ForegroundColor Green
+    Write-Host "Outcome: Policy WOULD LIKELY APPLY based on simulated User, Application, Location, Platform, Sign-in Risk, and User Risk conditions." -ForegroundColor Green
     Write-Host "Grant Controls from this policy: $($PolicyToSimulate.GrantControls | ConvertTo-Json -Depth 3 -Compress)"
     if ($PolicyToSimulate.SessionControls) {
         Write-Host "Session Controls from this policy: $($PolicyToSimulate.SessionControls | ConvertTo-Json -Depth 3 -Compress)"
     }
 } else {
-    Write-Host "Outcome: Policy WOULD LIKELY NOT APPLY based on the evaluated User and Application conditions." -ForegroundColor Yellow
-    Write-Host "Reason: UserMatch=$userMatch, ApplicationMatch=$applicationMatch. At least one primary condition was not met."
+    Write-Host "Outcome: Policy WOULD LIKELY NOT APPLY based on the evaluated conditions." -ForegroundColor Yellow
+    Write-Host "Reason: UserMatch=$userMatch, AppMatch=$applicationMatch, LocationMatch=$locationMatch, PlatformMatch=$platformMatch, SignInRiskMatch=$signInRiskMatch, UserRiskMatch=$userRiskMatch. At least one condition was not met or not satisfied by simulation parameters."
 }
 
 # --- 5. COMPARE WITH EXISTING APPLICABLE POLICIES (Conceptual) ---
