@@ -10,7 +10,7 @@ param (
 )
 
 # Import required modules
-Import-Module "./src/modules/policy-management/policy_manager.ps1"
+Import-Module "./src/modules/policy-management/PolicyManager.ps1"
 
 # Initialize logging
 $logPath = "./logs/deployment_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
