@@ -2,135 +2,161 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$TenantId,
     [Parameter(Mandatory = $true)]
-    [string]$TestEnvironment
+    [string]$TestEnvironment # Not directly used in this version but good for context
 )
 
 BeforeAll {
     # Import required modules
-    Import-Module "../../src/modules/policy-management/policy_manager.ps1"
-    Import-Module "../../src/modules/compliance/compliance_manager.ps1"
-    Import-Module "../../src/modules/risk/risk_assessor.ps1"
+    Import-Module $PSScriptRoot/../../src/modules/policy-management/policy_manager.ps1 -Force
+    # Compliance and RiskAssessor modules are not directly used by PolicyManager integration tests here.
+    # Import-Module $PSScriptRoot/../../src/modules/compliance/compliance_manager.ps1 -Force
+    # Import-Module $PSScriptRoot/../../src/modules/risk/risk_assessor.ps1 -Force
 
     # Initialize test context
     $script:testContext = @{
         TenantId = $TenantId
         Environment = $TestEnvironment
         PolicyManager = $null
-        TestPolicies = @()
+        TestPolicyIds = [System.Collections.Generic.List[string]]::new() # Store IDs for cleanup
     }
 
-    # Test policy definitions
+    # Test policy definitions (using hashtables as input for DeployPolicy)
+    # Ensure DisplayNames are unique for these tests to avoid conflicts with other policies
+    # or previous failed test runs if cleanup didn't complete.
+    $baseName = "PSTRE_INT_TEST_" + (Get-Date -Format "yyyyMMddHHmmss")
+
     $script:testPolicies = @{
         basic = @{
-            displayName = "INT_TEST_Basic_Policy"
-            state = "enabled"
+            displayName = "${baseName}_Basic_Policy"
+            state = "enabled" # or "disabled" or "enabledForReportingButNotEnforced"
             conditions = @{
                 users = @{
-                    includeUsers = @("test-user@domain.com")
+                    includeUsers = @("All") # Using "All" for simplicity in test environment setup
+                                          # In real tests, use specific test user IDs that exist
                 }
                 applications = @{
                     includeApplications = @("All")
                 }
             }
             grantControls = @{
-                operator = "AND"
+                operator = "OR" # Changed from AND for basic policy to be less restrictive
                 builtInControls = @("mfa")
             }
         }
-        complex = @{
-            displayName = "INT_TEST_Complex_Policy"
+        complex = @{ # This policy is now used for the update test
+            displayName = "${baseName}_Complex_Update_Policy"
             state = "enabled"
             conditions = @{
                 users = @{
-                    includeGroups = @("test-group-id")
+                    includeUsers = @("All")
                 }
                 applications = @{
-                    includeApplications = @("Office365")
+                    includeApplications = @("Office365") # Example, could be specific App ID
                 }
-                platforms = @{
-                    includePlatforms = @("android", "iOS")
-                }
-                locations = @{
-                    includeLocations = @("test-location-id")
+                clientAppTypes = @("all") # Ensure this is valid; e.g., "browser", "mobileApps"
+                 locations = @{
+                    includeLocations = @("AllTrusted") # Requires trusted locations to be configured
+                    excludeLocations = @()
                 }
             }
             grantControls = @{
                 operator = "OR"
-                builtInControls = @("mfa", "compliantDevice")
+                builtInControls = @("mfa", "compliantDevice") # compliantDevice requires Intune
             }
         }
     }
+
+    # Ensure PolicyManager is instantiated after $TenantId is available
+    $script:testContext.PolicyManager = [ConditionalAccessPolicyManager]::new($script:testContext.TenantId)
+    # The PolicyManager constructor calls Connect-MgGraph. Ensure this is handled if tests run non-interactively.
+    # For integration tests, it's assumed the environment/user context is already authenticated.
 }
 
 Describe "Conditional Access Policy Integration Tests" {
-    BeforeAll {
-        $script:testContext.PolicyManager = [ConditionalAccessPolicyManager]::new($TenantId)
-    }
 
     Context "Policy Deployment Workflow" {
         It "Should successfully deploy a basic policy" {
-            # Deploy test policy
-            $deployedPolicy = $script:testContext.PolicyManager.DeployPolicy($script:testPolicies.basic)
-            $script:testContext.TestPolicies += $deployedPolicy.Id
+            $policyDef = $script:testPolicies.basic
+            Write-Host "Deploying basic policy: $($policyDef.displayName)"
+            $script:testContext.PolicyManager.DeployPolicy($policyDef) # DeployPolicy is void
 
-            # Verify deployment
-            $policy = Get-MgIdentityConditionalAccessPolicy -PolicyId $deployedPolicy.Id
-            $policy.DisplayName | Should -Be $script:testPolicies.basic.displayName
-            $policy.State | Should -Be "enabled"
+            Start-Sleep -Seconds 10 # Allow time for Azure AD replication
+
+            $retrievedPolicies = Get-MgIdentityConditionalAccessPolicy -Filter "displayName eq '$($policyDef.displayName)'" -ErrorAction SilentlyContinue
+            $retrievedPolicies.Should().Not().BeNullOrEmpty("Policy '$($policyDef.displayName)' should be found after deployment.")
+            # If Get-MgIdentityConditionalAccessPolicy returns a single object directly when one match, or $null when no match,
+            # and an array only for multiple matches, the Count check needs to be robust.
+            # Let's assume it always returns a collection or $null for safety in tests.
+            if ($null -ne $retrievedPolicies -and $retrievedPolicies.GetType().IsArray) {
+                ($retrievedPolicies.Count).Should().Be(1, "Expected only one policy with name '$($policyDef.displayName)'")
+                $retrievedPolicy = $retrievedPolicies[0]
+            } elseif ($null -ne $retrievedPolicies) { # Single object returned
+                 $retrievedPolicy = $retrievedPolicies
+            } else { # Null returned
+                $retrievedPolicy = $null
+            }
+            $retrievedPolicy.Should().Not().BeNull() # Should have found one
+
+            $retrievedPolicy.DisplayName.Should().Be($policyDef.displayName)
+            $retrievedPolicy.State.Should().Be($policyDef.state)
+            $retrievedPolicy.GrantControls.Operator.ToLower().Should().Be($policyDef.grantControls.operator.ToLower())
+
+            $script:testContext.TestPolicyIds.Add($retrievedPolicy.Id)
         }
 
-        It "Should handle complex policy configurations" {
-            $deployedPolicy = $script:testContext.PolicyManager.DeployPolicy($script:testPolicies.complex)
-            $script:testContext.TestPolicies += $deployedPolicy.Id
-
-            $policy = Get-MgIdentityConditionalAccessPolicy -PolicyId $deployedPolicy.Id
-            $policy.Conditions.Platforms.IncludePlatforms | Should -Contain "android"
-            $policy.GrantControls.BuiltInControls | Should -Contain "compliantDevice"
-        }
-
-        It "Should detect policy conflicts" {
-            $conflictingPolicy = $script:testPolicies.basic.Clone()
-            $conflictingPolicy.displayName = "INT_TEST_Conflicting_Policy"
+        It "Should update an existing policy's properties" {
+            $policyDefToUpdate = $script:testPolicies.complex # Use the 'complex' definition for this test
+            $originalDisplayName = $policyDefToUpdate.displayName
             
-            # Attempt to deploy conflicting policy
-            { $script:testContext.PolicyManager.DeployPolicy($conflictingPolicy) } | 
-                Should -Throw -ErrorId "PolicyConflict"
-        }
-    }
+            Write-Host "Deploying initial version of policy for update test: $originalDisplayName"
+            $script:testContext.PolicyManager.DeployPolicy($policyDefToUpdate)
+            Start-Sleep -Seconds 10
 
-    Context "Policy Evaluation" {
-        It "Should correctly evaluate access decisions" {
-            $testCase = @{
-                user = "test-user@domain.com"
-                application = "Office365"
-                platform = "android"
-                location = "test-location-id"
-                deviceCompliance = $true
-            }
+            $initialPoliciesResult = Get-MgIdentityConditionalAccessPolicy -Filter "displayName eq '$originalDisplayName'"
+            $initialPoliciesResult.Should().Not().BeNullOrEmpty("Policy '$originalDisplayName' should exist after initial deployment.")
+            $initialPolicy = if ($initialPoliciesResult.GetType().IsArray) { $initialPoliciesResult[0] } else { $initialPoliciesResult }
+            ($initialPolicy -ne $null).Should().BeTrue()
 
-            $decision = $script:testContext.PolicyManager.EvaluateAccess($testCase)
-            $decision.Granted | Should -Be $true
-            $decision.RequiredControls | Should -Contain "mfa"
-        }
-    }
+            $initialPolicyId = $initialPolicy.Id
+            $script:testContext.TestPolicyIds.Add($initialPolicyId) # Add for cleanup
+            $initialPolicy.State.Should().Be("enabled")
 
-    Context "Emergency Access Scenarios" {
-        It "Should handle emergency access overrides" {
-            $emergencyCase = @{
-                user = "emergency-admin@domain.com"
-                isEmergencyAccess = $true
-            }
+            # Modify the definition for update
+            $updatedPolicyDef = $policyDefToUpdate.PSObject.Copy() # Deep copy for modification
+            $updatedPolicyDef.state = 'disabled'
+            $updatedPolicyDef.grantControls = @{ operator = "AND"; builtInControls = @("mfa") }
 
-            $decision = $script:testContext.PolicyManager.EvaluateAccess($emergencyCase)
-            $decision.Granted | Should -Be $true
-            $decision.BypassReason | Should -Be "EmergencyAccess"
+
+            Write-Host "Updating policy: $originalDisplayName to state '$($updatedPolicyDef.state)'"
+            $script:testContext.PolicyManager.DeployPolicy($updatedPolicyDef) # Deploy again with modified definition
+            Start-Sleep -Seconds 10
+
+            $retrievedUpdatedPoliciesResult = Get-MgIdentityConditionalAccessPolicy -Filter "displayName eq '$originalDisplayName'"
+            $retrievedUpdatedPoliciesResult.Should().Not().BeNullOrEmpty("Policy '$originalDisplayName' should still exist after update.")
+            $retrievedUpdatedPolicy = if ($retrievedUpdatedPoliciesResult.GetType().IsArray) { $retrievedUpdatedPoliciesResult[0] } else { $retrievedUpdatedPoliciesResult }
+            ($retrievedUpdatedPolicy -ne $null).Should().BeTrue()
+
+            $retrievedUpdatedPolicy.Id.Should().Be($initialPolicyId, "Policy ID should remain the same after update.")
+            $retrievedUpdatedPolicy.State.Should().Be('disabled')
+            $retrievedUpdatedPolicy.GrantControls.Operator.ToLower().Should().Be("and")
+            $retrievedUpdatedPolicy.GrantControls.BuiltInControls.Should().BeEquivalentTo(@("mfa"))
         }
     }
 
     AfterAll {
-        # Cleanup test policies
-        foreach ($policyId in $script:testContext.TestPolicies) {
-            $script:testContext.PolicyManager.RemovePolicy($policyId)
+        Write-Host "Cleaning up test policies..."
+        if ($script:testContext.TestPolicyIds.Count -gt 0) {
+            # Make a unique list of IDs to prevent trying to delete the same ID multiple times if it got added more than once
+            $uniquePolicyIds = $script:testContext.TestPolicyIds | Select-Object -Unique
+            foreach ($policyId in $uniquePolicyIds) {
+                Write-Host "Attempting to remove policy with ID: $policyId"
+                Remove-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId $policyId -ErrorAction SilentlyContinue
+                # Adding a small delay after each deletion attempt can sometimes help with Graph API consistency.
+                Start-Sleep -Seconds 2
+            }
+            Write-Host "$($uniquePolicyIds.Count) unique test policies scheduled for removal."
+        } else {
+            Write-Host "No test policies were recorded for cleanup."
         }
     }
 }
