@@ -141,10 +141,58 @@ class PolicyValidator {
             }
         }
 
+        # Validate MaxUserScope
+        if ($null -ne $policy.conditions.users -and $policy.conditions.users.includeUsers -notcontains "All") {
+            $userScopeCount = 0
+            if ($null -ne $policy.conditions.users.includeUsers) {
+                $userScopeCount += $policy.conditions.users.includeUsers.Count
+            }
+            if ($null -ne $policy.conditions.users.includeGroups) {
+                $userScopeCount += $policy.conditions.users.includeGroups.Count
+            }
+            if ($userScopeCount -gt $this.ValidationRules.Conditions.MaxUserScope) {
+                $results.Warnings += "Policy targets a large number of individual users/groups ($userScopeCount entries), exceeding the recommended maximum of $($this.ValidationRules.Conditions.MaxUserScope). Consider using 'All users' with exclusions or broader groups if appropriate."
+            }
+        }
+
+        # Validate RequiredPlatformStates
+        if ($policy.conditions.ContainsKey("platforms") -and $null -ne $policy.conditions.platforms) {
+            $includePlatforms = $policy.conditions.platforms.includePlatforms
+            $excludePlatforms = $policy.conditions.platforms.excludePlatforms
+
+            if (($null -eq $includePlatforms -or $includePlatforms.Count -eq 0) -and `
+                ($null -eq $excludePlatforms -or $excludePlatforms.Count -eq 0)) {
+                $results.Warnings += "Policy defines a 'platforms' condition block but does not specify any platforms to include or exclude. This may lead to unintended behavior or indicate an incomplete policy configuration for platforms."
+            }
+        }
+
         # Validate security baseline
         if ($this.ValidationRules.SecurityBaseline.RequireMFA) {
-            if (-not ($policy.grantControls.builtInControls -contains "mfa")) {
+            if (($null -eq $policy.grantControls) -or ($null -eq $policy.grantControls.builtInControls) -or (-not ($policy.grantControls.builtInControls -contains "mfa"))) {
                 $results.Recommendations += "Consider adding MFA requirement"
+            }
+        }
+
+        # Validate SecurityBaseline.BlockLegacyAuth
+        if ($this.ValidationRules.SecurityBaseline.BlockLegacyAuth -eq $true) {
+            if ($null -ne $policy.conditions.clientAppTypes -and $policy.conditions.clientAppTypes -contains 'other') {
+                $results.Warnings += "This policy targets/allows legacy authentication clients ('other' in clientAppTypes). It is recommended to block legacy authentication across the tenant via a separate, dedicated policy, as it's a significant security risk."
+            }
+            else {
+                # This specific policy doesn't allow legacy auth, but recommend a general policy.
+                # Ensure clientAppTypes is checked to avoid recommending this if the policy *does* target 'other'
+                if ($null -eq $policy.conditions.clientAppTypes -or $policy.conditions.clientAppTypes -notcontains 'other') {
+                    $results.Recommendations += "Consider implementing a dedicated policy to explicitly block legacy authentication ('other' clientAppTypes) if not already in place tenant-wide."
+                }
+            }
+        }
+
+        # Validate SecurityBaseline.RequireCompliantDevice
+        if ($this.ValidationRules.SecurityBaseline.RequireCompliantDevice -eq $true) {
+            if (($null -eq $policy.grantControls) -or ($null -eq $policy.grantControls.builtInControls) -or `
+                (-not ($policy.grantControls.builtInControls -contains "compliantDevice") -and `
+                 -not ($policy.grantControls.builtInControls -contains "block"))) {
+                $results.Recommendations += "Consider requiring a compliant device as a grant control for this policy to enhance security, unless it's intentionally a more permissive policy or access is blocked."
             }
         }
 
