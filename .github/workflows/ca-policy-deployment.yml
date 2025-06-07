@@ -32,13 +32,29 @@ jobs:
       - name: Run Policy Validation
         shell: pwsh
         run: |
-          Import-Module ./src/modules/policy-management/policy_manager.ps1
-          $policies = Get-Content ./templates/deployment/ca-policies.yaml | ConvertFrom-Yaml
-          $validator = [PolicyValidator]::new($env:TENANT_ID)
-          $validation = $validator.ValidatePolicies($policies)
+          Import-Module ./src/modules/validation/policy_validator.ps1 # Correct module for PolicyValidator
+          # $policyDefinitions variable name is more accurate as these are not full policy objects yet.
+          $policyDefinitions = Get-Content ./templates/deployment/ca-policies.yaml | ConvertFrom-Yaml
           
-          if ($validation.HasErrors) {
-            throw "Policy validation failed: $($validation.Errors -join '; ')"
+          $validator = [PolicyValidator]::new() # Correct constructor call
+          $validationResult = $validator.ValidatePolicies($policyDefinitions) # Call the new method
+
+          if ($validationResult.HasErrors) {
+            Write-Error "Policy validation failed. Found $($validationResult.TotalErrorsFound) errors."
+            # Output all error messages for easier debugging in workflow logs
+            $validationResult.AllErrorMessages | ForEach-Object { Write-Error "- $_" }
+            throw "Policy validation failed." # Simple throw to fail the step
+          } else {
+            Write-Host "Policy validation successful. No critical errors found."
+            if ($validationResult.TotalWarningsFound -gt 0) {
+                # Using Write-Warning for warnings in GitHub Actions will make them more visible (yellow)
+                Write-Warning "Found $($validationResult.TotalWarningsFound) warnings:"
+                $validationResult.AllWarningMessages | ForEach-Object { Write-Warning "- $_" }
+            }
+            if ($validationResult.TotalRecommendationsFound -gt 0) {
+                Write-Host "Found $($validationResult.TotalRecommendationsFound) recommendations:"
+                $validationResult.AllRecommendationMessages | ForEach-Object { Write-Host "- $_" }
+            }
           }
 
   test:

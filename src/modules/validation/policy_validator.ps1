@@ -7,6 +7,80 @@ class PolicyValidator {
         $this.ValidationResults = @()
     }
 
+    # Method to validate an array of policy definitions
+    [hashtable]ValidatePolicies([array]$policyDefinitions) {
+        $allErrors = [System.Collections.Generic.List[string]]::new()
+        $allWarnings = [System.Collections.Generic.List[string]]::new()
+        $allRecommendations = [System.Collections.Generic.List[string]]::new()
+        $overallIsValid = $true # Assume all are valid until an error is found
+
+        if ($null -eq $policyDefinitions -or $policyDefinitions.Count -eq 0) {
+            Write-Warning "No policy definitions provided to ValidatePolicies."
+            return @{
+                HasErrors                 = $false # No errors because nothing was processed to be invalid
+                TotalPoliciesProcessed    = 0
+                TotalErrorsFound          = 0
+                TotalWarningsFound        = 0
+                TotalRecommendationsFound = 0
+                AllErrorMessages          = @()
+                AllWarningMessages        = @()
+                AllRecommendationMessages = @()
+            }
+        }
+
+        Write-Verbose "Validating $($policyDefinitions.Count) policy definitions."
+
+        foreach ($policyDef in $policyDefinitions) {
+            $policyDisplayNameForError = if ($null -ne $policyDef -and $policyDef.PSObject.Properties.Name.Contains('DisplayName') -and -not [string]::IsNullOrEmpty($policyDef.DisplayName)) {
+                "'$($policyDef.DisplayName)'"
+            } else {
+                "'Unnamed Policy (index $($policyDefinitions.IndexOf($policyDef)))'"
+            }
+
+            try {
+                # Note: The current PolicyValidator class does not have its own ValidatePolicyDefinition method.
+                # That method is part of ConditionalAccessPolicyManager.
+                # Here, we directly call ValidatePolicy which performs all checks.
+                # If fundamental checks were in a separate ValidatePolicyDefinition within this class,
+                # we would call it first and catch its specific errors.
+                # For now, ValidatePolicy itself will populate errors if any are found.
+
+                if ($null -eq $policyDef -or ($policyDef -isnot [hashtable] -and $policyDef -isnot [pscustomobject])) {
+                    $allErrors.Add("Policy definition $policyDisplayNameForError is null or not a valid object. Skipping.")
+                    $overallIsValid = $false
+                    continue
+                }
+
+                $singlePolicyResult = $this.ValidatePolicy($policyDef) # This is the existing method
+
+                if (-not $singlePolicyResult.IsValid) {
+                    $overallIsValid = $false
+                }
+                # Prefix messages with policy display name for better context in aggregate report
+                $singlePolicyResult.Errors | ForEach-Object { $allErrors.Add("Policy $policyDisplayNameForError Error: $_") }
+                $singlePolicyResult.Warnings | ForEach-Object { $allWarnings.Add("Policy $policyDisplayNameForError Warning: $_") }
+                $singlePolicyResult.Recommendations | ForEach-Object { $allRecommendations.Add("Policy $policyDisplayNameForError Recommendation: $_") }
+            }
+            catch {
+                # This catch block would handle unexpected errors from within ValidatePolicy itself,
+                # not from a separate ValidatePolicyDefinition if it were called here and threw.
+                $overallIsValid = $false
+                $allErrors.Add("Policy $policyDisplayNameForError failed validation with an unexpected exception: $($_.Exception.Message)")
+            }
+        }
+
+        return @{
+            HasErrors                 = -not $overallIsValid
+            TotalPoliciesProcessed    = $policyDefinitions.Count
+            TotalErrorsFound          = $allErrors.Count
+            TotalWarningsFound        = $allWarnings.Count
+            TotalRecommendationsFound = $allRecommendations.Count
+            AllErrorMessages          = $allErrors.ToArray()
+            AllWarningMessages        = $allWarnings.ToArray()
+            AllRecommendationMessages = $allRecommendations.ToArray()
+        }
+    }
+
     hidden [void]InitializeValidationRules() {
         $this.ValidationRules = @{
             RequiredProperties = @(
