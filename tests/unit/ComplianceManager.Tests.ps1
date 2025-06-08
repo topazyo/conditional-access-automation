@@ -2,7 +2,7 @@
 # Test suite for src/modules/compliance/compliance_manager.ps1
 
 BeforeAll {
-    Import-Module $PSScriptRoot/../../src/modules/compliance/compliance_manager.ps1 -Force
+    Import-Module $PSScriptRoot/../../src/modules/compliance/ComplianceManager.ps1 -Force
 
     # Global Mocks
     Mock Connect-MgGraph {
