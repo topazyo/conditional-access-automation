@@ -58,4 +58,8 @@ Install-ModuleIfNotExists -ModuleName "Microsoft.Graph" -RequiredVersion "2.10.0
 # Typically installed for the current user for development and testing purposes.
 Install-ModuleIfNotExists -ModuleName "Pester" -RequiredVersion "5.5.0" -Scope "CurrentUser"
 
+# Install powershell-yaml
+# This module is used for working with YAML files, e.g. policy definitions.
+Install-ModuleIfNotExists -ModuleName "powershell-yaml" -RequiredVersion "0.4.2" -Scope "CurrentUser"
+
 Write-Host "Dependency installation script finished."
