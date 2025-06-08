@@ -27,17 +27,69 @@ jobs:
         run: |
           Install-Module Microsoft.Graph -Force
           Install-Module Pester -Force
-          
+
+      - name: Install Dependencies
+        shell: pwsh
+        run: ./scripts/setup/Install-ProjectDependencies.ps1
+        
       - name: Run Policy Validation
         shell: pwsh
         run: |
-          Import-Module ./src/modules/policy-management/policy_manager.ps1
-          $policies = Get-Content ./templates/deployment/ca-policies.yaml | ConvertFrom-Yaml
-          $validator = [PolicyValidator]::new($env:TENANT_ID)
-          $validation = $validator.ValidatePolicies($policies)
-          
-          if ($validation.HasErrors) {
-            throw "Policy validation failed: $($validation.Errors -join '; ')"
+          Import-Module ./src/modules/validation/PolicyValidator.ps1 -Force
+          $yamlFilePath = "./templates/deployment/ca-policies.yaml"
+
+          if (-not (Test-Path $yamlFilePath -PathType Leaf)) {
+              Write-Error "Policy definitions YAML file not found at: $yamlFilePath"
+              throw "Missing policy definitions file."
+          }
+
+          $yamlContent = Get-Content $yamlFilePath | ConvertFrom-Yaml -ErrorAction Stop
+
+          $policyArrayToValidate = $null
+          if ($null -ne $yamlContent.policies) {
+              Write-Host "Found policies under the '.policies' key in the YAML file."
+              $policyArrayToValidate = $yamlContent.policies
+          } elseif ($yamlContent -is [array]) {
+              Write-Host "YAML file directly represents an array of policies."
+              $policyArrayToValidate = $yamlContent
+          } else {
+              Write-Error "Could not find an array of policies in '$yamlFilePath'. Content might be malformed or not an array at the root or under a 'policies' key."
+              throw "Policy definitions not found in expected structure in '$yamlFilePath'."
+          }
+
+          if ($null -eq $policyArrayToValidate -or $policyArrayToValidate.Count -eq 0) {
+              Write-Warning "No policy definitions found to validate in '$yamlFilePath' after parsing."
+              Write-Host "Policy validation skipped as no policies were found."
+              # Consider exiting gracefully if an empty policy set is acceptable:
+              # exit 0
+          } else {
+              $validator = [PolicyValidator]::new()
+              $validationResult = $validator.ValidatePolicies($policyArrayToValidate)
+
+              if ($validationResult.HasErrors) {
+                  Write-Error "Policy validation failed. Found $($validationResult.TotalErrorsFound) errors:"
+                  $validationResult.AllErrorMessages | ForEach-Object { Write-Error "- $_" }
+
+                  if ($validationResult.TotalWarningsFound -gt 0) {
+                      Write-Warning "Policy validation generated $($validationResult.TotalWarningsFound) warnings:"
+                      $validationResult.AllWarningMessages | ForEach-Object { Write-Warning "- $_" }
+                  }
+                  if ($validationResult.TotalRecommendationsFound -gt 0) {
+                      Write-Host "Policy validation generated $($validationResult.TotalRecommendationsFound) recommendations:"
+                      $validationResult.AllRecommendationMessages | ForEach-Object { Write-Host "- $_" }
+                  }
+                  throw "Policy validation failed due to errors."
+              } else {
+                  Write-Host "Policy validation successful. No critical errors found."
+                  if ($validationResult.TotalWarningsFound -gt 0) {
+                      Write-Warning "Policy validation generated $($validationResult.TotalWarningsFound) warnings:"
+                      $validationResult.AllWarningMessages | ForEach-Object { Write-Warning "- $_" }
+                  }
+                  if ($validationResult.TotalRecommendationsFound -gt 0) {
+                      Write-Host "Policy validation generated $($validationResult.TotalRecommendationsFound) recommendations:"
+                      $validationResult.AllRecommendationMessages | ForEach-Object { Write-Host "- $_" }
+                  }
+              }
           }
 
   test:
