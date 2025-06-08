@@ -413,7 +413,7 @@ class PolicyValidator {
     }
 
     # Enhanced implementation for control conflict detection.
-    hidden [bool]CheckControlConflict([hashtable]$newGrantControls, [object]$existingGrantControls) {
+    hidden [bool]CheckControlConflict([hashtable]$newGrantControls, [object]$existingGrantControls) 
         if ($null -eq $newGrantControls -or $null -eq $existingGrantControls) {
             Write-Verbose "CheckControlConflict: GrantControls property is null in one of the policies. Skipping control conflict check."
             return $false # No conflict if one is not defined
