@@ -2,7 +2,7 @@
 # Test suite for src/modules/analytics/advanced_analyzer.ps1
 
 BeforeAll {
-    Import-Module $PSScriptRoot/../../src/modules/analytics/advanced_analyzer.ps1 -Force
+    Import-Module $PSScriptRoot/../../src/modules/analytics/AdvancedAnalyzer.ps1 -Force
 
     $script:NewMockCaPolicy = {
         param(

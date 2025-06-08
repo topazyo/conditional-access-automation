@@ -111,7 +111,8 @@ function Find-RedundantPolicies([array]$policies) {
 # Merging policies is a high-risk operation and should be done with extreme caution,
 # typically after manual review and with a clear understanding of the combined impact.
 function Merge-Policies([array]$policiesToMerge) {
-    Write-Warning "Merge-Policies is a high-risk operation and NOT fully implemented. It currently performs NO merge actions."
+    Write-Warning "CRITICAL WARNING: The 'Merge-Policies' function is a non-operational placeholder. It does NOT automatically merge policies due to the high risk and complexity involved. Manual review and a defined merge strategy are ESSENTIAL."
+    Write-Warning "This function currently only lists the policies suggested for a potential manual merge. NO automatic changes will be made by this function."
     Write-Warning "Manual review of the following policies is required to determine appropriate merge strategy:"
     foreach ($policy in $policiesToMerge) {
         Write-Warning "  - Name: '$($policy.DisplayName)', ID: '$($policy.Id)'"
@@ -151,6 +152,7 @@ function Merge-RedundantPolicies {
         }
         else {
             # Call Merge-Policies, which currently only issues warnings and performs no action.
+            Write-Host "INFO: The following call to 'Merge-Policies' will only display information. It will NOT perform an automated merge."
             Write-Host "Calling Merge-Policies (currently a non-acting placeholder) for the set above."
             Merge-Policies $set.Policies
             Write-Host "Merge-Policies call completed. Manual review and action are required."
