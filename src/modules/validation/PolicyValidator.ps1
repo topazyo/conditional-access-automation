@@ -122,35 +122,111 @@ class PolicyValidator {
 
         # Check required properties
         foreach ($prop in $this.ValidationRules.RequiredProperties) {
-            if (-not $policy.ContainsKey($prop)) {
+            if (-not ($policy.PSObject.Properties.Name -contains $prop)) {
                 $results.IsValid = $false
                 $results.Errors += "Missing required property: $prop"
             }
         }
 
         # Validate user scope
-        if ($policy.conditions.users.includeUsers -contains "All") {
-            $results.Warnings += "Policy applies to all users - consider scope restriction"
+        if ($null -ne $policy.conditions -and $null -ne $policy.conditions.users -and $null -ne $policy.conditions.users.includeUsers) {
+            if ($policy.conditions.users.includeUsers -contains "All") {
+                $results.Warnings += "Policy applies to all users - consider scope restriction"
+            }
         }
 
         # Validate applications
-        foreach ($app in $policy.conditions.applications.includeApplications) {
-            if ($app -in $this.ValidationRules.Conditions.RestrictedApplications) {
-                $results.Errors += "Restricted application included: $app"
-                $results.IsValid = $false
+        if ($null -ne $policy.conditions -and $null -ne $policy.conditions.applications -and $null -ne $policy.conditions.applications.includeApplications) {
+            foreach ($app in $policy.conditions.applications.includeApplications) {
+                if ($app -in $this.ValidationRules.Conditions.RestrictedApplications) {
+                    $results.Errors += "Restricted application included: $app"
+                    $results.IsValid = $false
+                }
+            }
+        }
+
+        # Validate MaxUserScope
+        if ($null -ne $policy.conditions -and $null -ne $policy.conditions.users) {
+            $includeUsers = @()
+            if ($null -ne $policy.conditions.users.includeUsers) {
+                $includeUsers = $policy.conditions.users.includeUsers
+            }
+
+            if ($includeUsers -notcontains "All") {
+                $userScopeCount = 0
+                if ($includeUsers.Count -gt 0) {
+                    $userScopeCount += $includeUsers.Count
+                }
+                if ($null -ne $policy.conditions.users.includeGroups) {
+                    $userScopeCount += $policy.conditions.users.includeGroups.Count
+                }
+                if ($userScopeCount -gt $this.ValidationRules.Conditions.MaxUserScope) {
+                    $results.Warnings += "Policy targets a large number of individual users/groups ($userScopeCount entries), exceeding the recommended maximum of $($this.ValidationRules.Conditions.MaxUserScope). Consider using 'All users' with exclusions or broader groups if appropriate."
+                }
+            }
+        }
+
+        # Validate RequiredPlatformStates
+        if ($null -ne $policy.conditions -and $policy.conditions.PSObject.Properties.Name -contains "platforms" -and $null -ne $policy.conditions.platforms) {
+            $includePlatforms = @()
+            if ($null -ne $policy.conditions.platforms.includePlatforms) {
+                $includePlatforms = $policy.conditions.platforms.includePlatforms
+            }
+            $excludePlatforms = @()
+            if ($null -ne $policy.conditions.platforms.excludePlatforms) {
+                $excludePlatforms = $policy.conditions.platforms.excludePlatforms
+            }
+
+            if (($includePlatforms.Count -eq 0) -and ($excludePlatforms.Count -eq 0)) {
+                $results.Warnings += "Policy defines a 'platforms' condition block but does not specify any platforms to include or exclude. This may lead to unintended behavior or indicate an incomplete policy configuration for platforms."
             }
         }
 
         # Validate security baseline
         if ($this.ValidationRules.SecurityBaseline.RequireMFA) {
-            if (-not ($policy.grantControls.builtInControls -contains "mfa")) {
+            $builtInControls = @()
+            if ($null -ne $policy.grantControls -and $null -ne $policy.grantControls.builtInControls) {
+                $builtInControls = $policy.grantControls.builtInControls
+            }
+            if (-not ($builtInControls -contains "mfa")) {
                 $results.Recommendations += "Consider adding MFA requirement"
             }
         }
 
+        # Validate SecurityBaseline.BlockLegacyAuth
+        if ($this.ValidationRules.SecurityBaseline.BlockLegacyAuth -eq $true) {
+            $clientAppTypes = @()
+            if ($null -ne $policy.conditions -and $null -ne $policy.conditions.clientAppTypes) {
+                $clientAppTypes = $policy.conditions.clientAppTypes
+            }
+
+            if ($clientAppTypes -contains 'other') {
+                $results.Warnings += "This policy targets/allows legacy authentication clients ('other' in clientAppTypes). It is recommended to block legacy authentication across the tenant via a separate, dedicated policy, as it's a significant security risk."
+            }
+            else {
+                if (-not ($clientAppTypes -contains 'other')) { # Ensure it's not an empty list that falsely passes
+                    $results.Recommendations += "Consider implementing a dedicated policy to explicitly block legacy authentication ('other' clientAppTypes) if not already in place tenant-wide."
+                }
+            }
+        }
+
+        # Validate SecurityBaseline.RequireCompliantDevice
+        if ($this.ValidationRules.SecurityBaseline.RequireCompliantDevice -eq $true) {
+            $builtInControls = @()
+            if ($null -ne $policy.grantControls -and $null -ne $policy.grantControls.builtInControls) {
+                $builtInControls = $policy.grantControls.builtInControls
+            }
+
+            if (-not ($builtInControls -contains "compliantDevice") -and -not ($builtInControls -contains "block")) {
+                $results.Recommendations += "Consider requiring a compliant device as a grant control for this policy to enhance security, unless it's intentionally a more permissive policy or access is blocked."
+            }
+        }
+
         # Validate session controls
-        if ($policy.sessionControls.signInFrequency.value -gt $this.ValidationRules.SecurityBaseline.MaxSessionDuration) {
-            $results.Warnings += "Session duration exceeds recommended maximum"
+        if ($null -ne $policy.sessionControls -and $null -ne $policy.sessionControls.signInFrequency -and $null -ne $policy.sessionControls.signInFrequency.value) {
+            if ($policy.sessionControls.signInFrequency.value -gt $this.ValidationRules.SecurityBaseline.MaxSessionDuration) {
+                $results.Warnings += "Session duration exceeds recommended maximum"
+            }
         }
 
         # Check for potential conflicts
@@ -178,55 +254,92 @@ class PolicyValidator {
     }
 
     hidden [bool]DetectConflict([hashtable]$newPolicy, [object]$existingPolicy) {
+        # Safe navigation for nested properties
+        $newPolicyConditions = $newPolicy.conditions
+        $newPolicyGrantControls = $newPolicy.grantControls
+
+        $existingPolicyConditions = $existingPolicy.Conditions
+        $existingPolicyGrantControls = $existingPolicy.GrantControls
+
+        if ($null -eq $newPolicyConditions -or $null -eq $existingPolicyConditions) {
+            Write-Warning "DetectConflict: Conditions block is null in one of the policies. Cannot reliably detect conflict."
+            return $false # Or handle as a potential issue
+        }
+         if ($null -eq $newPolicyGrantControls -or $null -eq $existingPolicyGrantControls) {
+            Write-Warning "DetectConflict: GrantControls block is null in one of the policies. Cannot reliably detect control conflict."
+            # Depending on strictness, this could be $false or $true if any overlap on conditions exists.
+            # For now, if controls are missing, assume no *control* conflict, but user/app overlap might still be relevant.
+        }
+
+
         # Check for user overlap
         $userOverlap = $this.CheckUserOverlap(
-            $newPolicy.conditions.users,
-            $existingPolicy.Conditions.Users
+            $newPolicyConditions.users,
+            $existingPolicyConditions.Users
         )
         
         # Check for application overlap
         $appOverlap = $this.CheckApplicationOverlap(
-            $newPolicy.conditions.applications,
-            $existingPolicy.Conditions.Applications
+            $newPolicyConditions.applications,
+            $existingPolicyConditions.Applications
         )
         
         # Check for contradicting controls
         $controlConflict = $this.CheckControlConflict(
-            $newPolicy.grantControls,
-            $existingPolicy.GrantControls
+            $newPolicyGrantControls, # Can be null
+            $existingPolicyGrantControls # Can be null
         )
         
         return ($userOverlap -and $appOverlap -and $controlConflict)
     }
 
     hidden [bool]CheckUserOverlap($newUsers, $existingUsers) {
-        if ($newUsers.includeUsers -contains "All" -or $existingUsers.IncludeUsers -contains "All") {
+        if ($null -eq $newUsers -or $null -eq $existingUsers) {
+            Write-Verbose "CheckUserOverlap: Users property is null in one of the policies. Skipping user overlap check."
+            return $false # No overlap if one is not defined
+        }
+
+        $newIncludeUsers = @()
+        if ($null -ne $newUsers.includeUsers) { $newIncludeUsers = @($newUsers.includeUsers) }
+
+        $existingIncludeUsers = @()
+        if ($null -ne $existingUsers.IncludeUsers) { $existingIncludeUsers = @($existingUsers.IncludeUsers) }
+
+        if (($newIncludeUsers -contains "All") -or ($existingIncludeUsers -contains "All")) {
+            # More nuanced check: if one is "All" and the other has "All" in ExcludeUsers, it's not an overlap.
+            # This simplified version considers "All" vs anything an overlap.
             return $true
         }
         
-        $overlap = Compare-Object `
-            $newUsers.includeUsers `
-            $existingUsers.IncludeUsers `
-            -IncludeEqual `
-            -ExcludeDifferent
+        $overlap = Compare-Object $newIncludeUsers $existingIncludeUsers -IncludeEqual -ExcludeDifferent
             
         return $overlap.Count -gt 0
     }
 
     # Enhanced implementation to check for application overlap.
     hidden [bool]CheckApplicationOverlap([hashtable]$newApplications, [object]$existingApplications) {
+        if ($null -eq $newApplications -or $null -eq $existingApplications) {
+            Write-Verbose "CheckApplicationOverlap: Applications property is null in one of the policies. Skipping application overlap check."
+            return $false
+        }
+
         # Normalize "All" applications GUID for comparison
-        $allAppsGuid = "00000000-0000-0000-0000-000000000000" # Placeholder for actual "All" applications ID if it's a GUID
-        # Graph API might return 'All', a specific GUID for "All Client Apps", or an empty array for includeApplications and rely on includeUserActions.
-        # For this logic, we'll assume 'All' string or a known GUID signifies all applications.
+        $allAppsGuid = "00000000-0000-0000-0000-000000000000"
 
-        $newIncludes = @($newApplications.includeApplications | ForEach-Object { $_ -replace "'", "" }) # Sanitize if needed
-        $newExcludes = @($newApplications.excludeApplications | ForEach-Object { $_ -replace "'", "" })
-        $newActions = @($newApplications.includeUserActions | ForEach-Object { $_ -replace "'", "" })
+        $newIncludes = @()
+        if ($null -ne $newApplications.includeApplications) { $newIncludes = @($newApplications.includeApplications | ForEach-Object { $_ -replace "'", "" }) }
+        $newExcludes = @()
+        if ($null -ne $newApplications.excludeApplications) { $newExcludes = @($newApplications.excludeApplications | ForEach-Object { $_ -replace "'", "" }) }
+        $newActions = @()
+        if ($null -ne $newApplications.includeUserActions) { $newActions = @($newApplications.includeUserActions | ForEach-Object { $_ -replace "'", "" }) }
 
-        $existingIncludes = @($existingApplications.IncludeApplications | ForEach-Object { $_ -replace "'", "" })
-        $existingExcludes = @($existingApplications.ExcludeApplications | ForEach-Object { $_ -replace "'", "" })
-        $existingActions = @($existingApplications.IncludeUserActions | ForEach-Object { $_ -replace "'", "" })
+        $existingIncludes = @()
+        if ($null -ne $existingApplications.IncludeApplications) { $existingIncludes = @($existingApplications.IncludeApplications | ForEach-Object { $_ -replace "'", "" }) }
+        $existingExcludes = @()
+        if ($null -ne $existingApplications.ExcludeApplications) { $existingExcludes = @($existingApplications.ExcludeApplications | ForEach-Object { $_ -replace "'", "" }) }
+        $existingActions = @()
+        if ($null -ne $existingApplications.IncludeUserActions) { $existingActions = @($existingApplications.IncludeUserActions | ForEach-Object { $_ -replace "'", "" }) }
+
 
         $newIsAllApps = $newIncludes -contains "All" -or $newIncludes -contains $allAppsGuid
         $existingIsAllApps = $existingIncludes -contains "All" -or $existingIncludes -contains $allAppsGuid
@@ -237,7 +350,6 @@ class PolicyValidator {
             Write-Verbose "AppOverlap: Both policies target 'All' applications."
             $appOverlapDetected = $true
         } elseif ($newIsAllApps) {
-            # New is "All", existing is specific. Overlap if any of existing's includes are not in new's excludes.
             foreach ($app in $existingIncludes) {
                 if ($app -notin $newExcludes) {
                     Write-Verbose "AppOverlap: New targets 'All', existing targets '$app' which is not excluded by new."
@@ -246,7 +358,6 @@ class PolicyValidator {
                 }
             }
         } elseif ($existingIsAllApps) {
-            # Existing is "All", new is specific. Overlap if any of new's includes are not in existing's excludes.
             foreach ($app in $newIncludes) {
                 if ($app -notin $existingExcludes) {
                     Write-Verbose "AppOverlap: Existing targets 'All', new targets '$app' which is not excluded by existing."
@@ -256,43 +367,27 @@ class PolicyValidator {
             }
         } else {
             # Both are specific lists of applications.
-            foreach ($newApp in $newIncludes) {
-                if (($newApp -in $existingIncludes) -and ($newApp -notin $newExcludes) -and ($newApp -notin $existingExcludes)) {
-                    Write-Verbose "AppOverlap: Specific app '$newApp' is included in both policies and not excluded by either."
-                    $appOverlapDetected = $true
-                    break
+            if ($newIncludes.Count -gt 0 -and $existingIncludes.Count -gt 0) { # Ensure both have includes to compare
+                foreach ($newApp in $newIncludes) {
+                    if (($newApp -in $existingIncludes) -and ($newApp -notin $newExcludes) -and ($newApp -notin $existingExcludes)) {
+                        Write-Verbose "AppOverlap: Specific app '$newApp' is included in both policies and not excluded by either."
+                        $appOverlapDetected = $true
+                        break
+                    }
                 }
             }
         }
 
         if (-not $appOverlapDetected) {
-            # If no direct application ID overlap, consider user actions if one policy is "All Apps" and the other has specific user actions,
-            # or if both have user actions but no app IDs. This part can be complex.
-            # For this version, if app IDs don't overlap, we assume no overlap for simplicity unless both target 'All' user actions.
-            # A more refined check would be if one is All Apps and has user actions that intersect with the other policy's user actions (even if other has specific apps).
             if (($newActions -contains "All" -or $newActions -contains "all") -and ($existingActions -contains "All" -or $existingActions -contains "all") ) {
-                 # This case is if app IDs didn't overlap but both policies have "All" user actions, which is a broad overlap.
-                 # This might be too simplistic if apps were very specific and disjoint.
-                 # However, if $appOverlapDetected is false, it means apps were disjoint or one/both were empty.
-                 # If both $newIncludes and $existingIncludes are empty, then user actions become primary.
                 if (($newIncludes.Count -eq 0 -or $newIncludes[0] -eq 'None') -and ($existingIncludes.Count -eq 0 -or $existingIncludes[0] -eq 'None')){
                      Write-Verbose "AppOverlap: No specific apps, but both policies target 'All' user actions."
                      $appOverlapDetected = $true
                 }
             }
-             # If one targets all apps and has user actions, and the other has specific apps but matching user actions.
-             # This is getting too complex for this iteration, focusing on app ID based overlap first.
         }
 
-
-        # If application overlap is detected, then check user actions for further refinement (optional for this version, consider it overlap if apps overlap)
         if ($appOverlapDetected) {
-            # At this point, application IDs are considered overlapping.
-            # We can refine by checking user actions, but the prompt stated:
-            # "If application IDs overlap but user actions do not intersect...this specific subtask should still consider it an application overlap"
-            # So, we don't need to make $appOverlapDetected false based on user actions if it's already true.
-            # However, we can log the user action situation.
-
             $newHasAllActions = $newActions -contains "All" -or $newActions -contains "all"
             $existingHasAllActions = $existingActions -contains "All" -or $existingActions -contains "all"
 
@@ -310,7 +405,7 @@ class PolicyValidator {
                     Write-Verbose "UserAction SubCheck: Specific user actions for overlapping apps do not intersect."
                 }
             }
-            return $true # As per requirement, if apps overlap, it's an overlap.
+            return $true
         }
 
         Write-Verbose "No significant application overlap detected by enhanced check."
@@ -319,13 +414,20 @@ class PolicyValidator {
 
     # Enhanced implementation for control conflict detection.
     hidden [bool]CheckControlConflict([hashtable]$newGrantControls, [object]$existingGrantControls) {
-        # Ensure grant controls and builtInControls are available for comparison
-        $newControls = $newGrantControls.builtInControls
-        $existingControls = $existingGrantControls.BuiltInControls # Note: Property name from Graph might be .BuiltInControls
+        if ($null -eq $newGrantControls -or $null -eq $existingGrantControls) {
+            Write-Verbose "CheckControlConflict: GrantControls property is null in one of the policies. Skipping control conflict check."
+            return $false # No conflict if one is not defined
+        }
 
-        # If either policy has no specific grant controls defined (e.g., it's purely conditional), no conflict.
-        if (($null -eq $newControls -or $newControls.Count -eq 0) -or `
-            ($null -eq $existingControls -or $existingControls.Count -eq 0)) {
+        $newControls = @()
+        if ($null -ne $newGrantControls.builtInControls) { $newControls = @($newGrantControls.builtInControls) }
+
+        $existingControls = @()
+        # Existing policy from Graph might have BuiltInControls as direct property of GrantControls
+        if ($null -ne $existingGrantControls.BuiltInControls) { $existingControls = @($existingGrantControls.BuiltInControls) }
+
+
+        if (($newControls.Count -eq 0) -or ($existingControls.Count -eq 0)) {
             Write-Verbose "ControlConflict: One or both policies have no defined built-in grant controls. No conflict."
             return $false
         }
