@@ -12,7 +12,7 @@ Enterprise-grade automation framework for managing Azure/Entra ID Conditional Ac
 - **Policy Lifecycle Management**
   - Automated policy deployment and updates
   - Conflict detection and resolution
-  - Version control and rollback capabilities
+  - Designed for integration with version control systems (e.g., Git) for policy-as-code lifecycle management.
 
 - **Compliance & Risk Management**
   - Built-in compliance frameworks (ISO 27001, NIST 800-53, GDPR)
@@ -49,42 +49,64 @@ cd ca-automation
 
 2. Install required PowerShell modules:
 ```powershell
-./scripts/setup/install-dependencies.ps1
+./scripts/setup/Install-ProjectDependencies.ps1
 ```
 
 3. Configure your environment:
 ```powershell
 Copy-Item .env.example .env
-# Edit .env with your environment settings
+# Edit .env with your environment settings (ensure .env is in .gitignore)
 ```
 
 ## 🚦 Quick Start
 
 1. **Basic Policy Deployment**
 ```powershell
-Import-Module ./src/modules/policy-management/policy_manager.ps1
+Import-Module ./src/modules/policy-management/PolicyManager.ps1
 
 $policyManager = [ConditionalAccessPolicyManager]::new($TenantId)
-$policyManager.DeployPolicy("./templates/policies/baseline.yaml")
+$policyManager.DeployPolicy("./templates/policies/security-baseline.yaml")
 ```
 
 2. **Compliance Assessment**
 ```powershell
+Import-Module ./src/modules/compliance/ComplianceManager.ps1 # Ensure module is imported
+
 $complianceManager = [ComplianceManager]::new($TenantId)
-$report = $complianceManager.AssessCompliance("ISO27001")
-$report.GenerateReport("./reports/compliance-$(Get-Date -Format 'yyyyMMdd').pdf")
+# For custom frameworks: $customFrameworks = @{...}; $complianceManager = [ComplianceManager]::new($TenantId, $customFrameworks)
+
+$reportFramework = "ISO27001"
+$reportOutputPath = "./reports/compliance-$reportFramework-$(Get-Date -Format 'yyyyMMdd').csv"
+$complianceManager.GenerateComplianceReport($reportFramework, $reportOutputPath)
+Write-Host "Compliance report generated at $reportOutputPath"
 ```
 
 3. **Risk Analysis**
 ```powershell
+Import-Module ./src/modules/risk/RiskAssessor.ps1 # Ensure module is imported
+Import-Module ./src/modules/policy-management/PolicyManager.ps1 # To get policies
+
+$policyMgr = [ConditionalAccessPolicyManager]::new($TenantId)
+# Get-MgIdentityConditionalAccessPolicy requires Graph connection, PolicyManager handles this.
+# Retrieve actual policy objects for analysis.
+$allCaPolicies = Get-MgIdentityConditionalAccessPolicy -All # Assuming connection is established.
+                                                                # Or use $policyMgr.GetPolicyMap().Values if only basic properties are needed by RiskAssessor.
+                                                                # For GenerateRiskReport, full policy objects are better.
+
 $riskAssessor = [RiskAssessor]::new()
-$riskReport = $riskAssessor.AnalyzePolicies()
-$riskReport.ExportFindings("./reports/risk-assessment.xlsx")
+# For custom risk model: $customFactors = @{...}; $customWeights = @{...}; $riskAssessor = [RiskAssessor]::new($customFactors, $customWeights)
+
+$riskReportData = $riskAssessor.GenerateRiskReport($allCaPolicies) # GenerateRiskReport expects an array of policy objects
+
+# Example: Exporting the risk report data to JSON
+$riskReportPath = "./reports/risk-assessment-$(Get-Date -Format 'yyyyMMdd').json"
+$riskReportData | ConvertTo-Json -Depth 5 | Out-File -Path $riskReportPath
+Write-Host "Risk assessment report (JSON) generated at $riskReportPath"
 ```
 
 ## 📊 Sample Dashboard
 
-![Dashboard Screenshot](docs/images/dashboard-preview.png)
+**Dashboard Status:** Azure Monitor Workbook KQL queries are available in `src/modules/reporting/dashboards/policy-monitoring.kql`. The full visual dashboard/GUI is a planned feature (see `docs/ROADMAP.md`).
 
 The built-in monitoring dashboard provides real-time visibility into:
 - Policy effectiveness metrics
@@ -111,6 +133,7 @@ graph TD
 - Automated conflict detection prevents policy overlap
 - Just-In-Time access for privileged operations
 - Comprehensive audit logging
+- For more details, see [Security Considerations](docs/security/README.md).
 
 ## 📖 Documentation
 
@@ -151,12 +174,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📊 Project Status
 
-- ✅ Core Policy Management
-- ✅ Compliance Engine
-- ✅ Risk Assessment
-- ✅ Basic Monitoring
-- 🔄 Advanced Analytics (In Progress)
-- 📅 ML-based Policy Recommendations (Planned)
+- ✅ Core Policy Management & Foundational Features (see Roadmap for details)
+- 🔄 Advanced Analytics & Enhanced "What If" (In Progress)
+- 📅 ML-based Recommendations & GUI (Planned)
 
 ## 🆘 Support
 
