@@ -89,7 +89,6 @@ class PolicyValidator {
                 "conditions",
                 "grantControls"
             )
-
             Conditions = @{
                 MaxUserScope = 1000
                 RestrictedApplications = @(
@@ -102,7 +101,6 @@ class PolicyValidator {
                     "configurationRequired"
                 )
             }
-
             SecurityBaseline = @{
                 RequireMFA = $true
                 BlockLegacyAuth = $true
@@ -300,7 +298,6 @@ class PolicyValidator {
                 $conflicts += "Conflict with policy: $($existingPolicy.DisplayName)"
             }
         }
-
         return $conflicts
     }
 
@@ -328,19 +325,16 @@ class PolicyValidator {
             $newPolicyConditions.users,
             $existingPolicyConditions.Users
         )
-
         # Check for application overlap
         $appOverlap = $this.CheckApplicationOverlap(
             $newPolicyConditions.applications,
             $existingPolicyConditions.Applications
         )
-
         # Check for contradicting controls
         $controlConflict = $this.CheckControlConflict(
             $newPolicyGrantControls, # Can be null
             $existingPolicyGrantControls # Can be null
         )
-
         return ($userOverlap -and $appOverlap -and $controlConflict)
     }
 
