@@ -13,9 +13,13 @@
     For example, `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`.
 #>
 
-# Check for Administrator Privileges
-if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Warning "Administrator privileges are recommended to install modules for all users. Please re-run this script as an Administrator if you encounter issues."
+# Check for Administrator Privileges - Windows specific
+if ($PSVersionTable.OS -match 'Windows') {
+    if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Warning "On Windows, Administrator privileges are recommended to install modules for all users if that scope is chosen. Please re-run this script as an Administrator if you encounter issues with AllUsers scope."
+    }
+} else {
+    Write-Host "Skipping Windows-specific Administrator check on non-Windows platform."
 }
 
 # Define a helper function to install modules if they are not already present
@@ -50,8 +54,8 @@ function Install-ModuleIfNotExists {
 
 # Install Microsoft.Graph SDK
 # This module is used for interacting with Microsoft Graph API.
-# Installing for AllUsers is common for SDKs and often requires admin rights.
-Install-ModuleIfNotExists -ModuleName "Microsoft.Graph" -RequiredVersion "2.10.0" -Scope "AllUsers"
+# Scope changed to CurrentUser for better cross-platform compatibility without requiring admin rights.
+Install-ModuleIfNotExists -ModuleName "Microsoft.Graph" -RequiredVersion "2.10.0" -Scope "CurrentUser"
 
 # Install Pester
 # Pester is a testing framework for PowerShell.
