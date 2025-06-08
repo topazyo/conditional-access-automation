@@ -89,7 +89,6 @@ class PolicyValidator {
                 "conditions",
                 "grantControls"
             )
-            
             Conditions = @{
                 MaxUserScope = 1000
                 RestrictedApplications = @(
@@ -102,7 +101,6 @@ class PolicyValidator {
                     "configurationRequired"
                 )
             }
-            
             SecurityBaseline = @{
                 RequireMFA = $true
                 BlockLegacyAuth = $true
@@ -182,6 +180,50 @@ class PolicyValidator {
             }
         }
 
+        # Check for Empty Grant Controls (Allow without requirements)
+        if (($policy.State -eq 'enabled' -or $policy.State -eq 'enabledForReportingButNotEnforced')) {
+            $hasGrantControlsDefined = $false
+            if ($null -ne $policy.grantControls) {
+                # Check if builtInControls has items
+                if ($policy.grantControls.PSObject.Properties.Name -contains 'builtInControls' -and `
+                    $null -ne $policy.grantControls.builtInControls -and `
+                    $policy.grantControls.builtInControls.Count -gt 0) {
+                    $hasGrantControlsDefined = $true
+                }
+                # Check if customAuthenticationFactors has items
+                if (-not $hasGrantControlsDefined -and `
+                    $policy.grantControls.PSObject.Properties.Name -contains 'customAuthenticationFactors' -and `
+                    $null -ne $policy.grantControls.customAuthenticationFactors -and `
+                    $policy.grantControls.customAuthenticationFactors.Count -gt 0) {
+                    $hasGrantControlsDefined = $true
+                }
+                # Check if termsOfUse has items
+                if (-not $hasGrantControlsDefined -and `
+                    $policy.grantControls.PSObject.Properties.Name -contains 'termsOfUse' -and `
+                    $null -ne $policy.grantControls.termsOfUse -and `
+                    $policy.grantControls.termsOfUse.Count -gt 0) {
+                    $hasGrantControlsDefined = $true
+                }
+
+                # If grantControls object exists, but no actual controls are defined, it's an issue.
+                # This also assumes grantControls.Operator is not 'block'.
+                # A policy with grantControls = $null is a block policy.
+                # A policy with grantControls.Operator = 'block' (if that's how it's represented) is also a block.
+                # The scenario here is grantControls exists, implies grant (Operator OR/AND), but lists no controls.
+                # Make sure Operator property exists before checking its value
+                $operatorIsBlock = $false
+                if ($policy.grantControls.PSObject.Properties.Name -contains 'Operator') {
+                    $operatorIsBlock = ($policy.grantControls.Operator -eq 'block')
+                }
+
+                if (-not $hasGrantControlsDefined -and -not $operatorIsBlock) {
+                    $results.Warnings += "Policy '$($policy.displayName)' is enabled to grant access if conditions are met, but specifies no concrete grant controls (e.g., MFA, compliant device, Terms of Use). This effectively means 'Allow' without further requirements once conditions pass."
+                }
+            }
+            # Note: A policy with $policy.grantControls = $null is implicitly a 'Block' policy if conditions are met.
+            # So, we are primarily concerned when grantControls object exists but is empty of actual controls and not explicitly a 'block' operator.
+        }
+
         # Validate security baseline
         if ($this.ValidationRules.SecurityBaseline.RequireMFA) {
             $builtInControls = @()
@@ -229,6 +271,13 @@ class PolicyValidator {
             }
         }
 
+        # Check for Disable Resilience Defaults
+        if ($null -ne $policy.sessionControls -and `
+            $policy.sessionControls.PSObject.Properties.Name -contains 'disableResilienceDefaults' -and `
+            $policy.sessionControls.disableResilienceDefaults -eq $true) {
+            $results.Warnings += "CRITICAL: Policy '$($policy.displayName)' has 'disableResilienceDefaults' set to true. This is NOT recommended as it prevents Azure AD from applying backup authentication measures during Microsoft Entra ID service disruptions."
+        }
+
         # Check for potential conflicts
         $conflicts = $this.CheckPolicyConflicts($policy)
         if ($conflicts.Count -gt 0) {
@@ -240,16 +289,15 @@ class PolicyValidator {
 
     [array]CheckPolicyConflicts([hashtable]$policy) {
         $conflicts = @()
-        
+
         # Get existing policies
         $existingPolicies = Get-MgIdentityConditionalAccessPolicy
-        
+
         foreach ($existingPolicy in $existingPolicies) {
             if ($this.DetectConflict($policy, $existingPolicy)) {
                 $conflicts += "Conflict with policy: $($existingPolicy.DisplayName)"
             }
         }
-        
         return $conflicts
     }
 
@@ -277,19 +325,16 @@ class PolicyValidator {
             $newPolicyConditions.users,
             $existingPolicyConditions.Users
         )
-        
         # Check for application overlap
         $appOverlap = $this.CheckApplicationOverlap(
             $newPolicyConditions.applications,
             $existingPolicyConditions.Applications
         )
-        
         # Check for contradicting controls
         $controlConflict = $this.CheckControlConflict(
             $newPolicyGrantControls, # Can be null
             $existingPolicyGrantControls # Can be null
         )
-        
         return ($userOverlap -and $appOverlap -and $controlConflict)
     }
 
@@ -310,9 +355,9 @@ class PolicyValidator {
             # This simplified version considers "All" vs anything an overlap.
             return $true
         }
-        
+
         $overlap = Compare-Object $newIncludeUsers $existingIncludeUsers -IncludeEqual -ExcludeDifferent
-            
+
         return $overlap.Count -gt 0
     }
 
@@ -413,7 +458,7 @@ class PolicyValidator {
     }
 
     # Enhanced implementation for control conflict detection.
-    hidden [bool]CheckControlConflict([hashtable]$newGrantControls, [object]$existingGrantControls) 
+    hidden [bool]CheckControlConflict([hashtable]$newGrantControls, [object]$existingGrantControls) {
         if ($null -eq $newGrantControls -or $null -eq $existingGrantControls) {
             Write-Verbose "CheckControlConflict: GrantControls property is null in one of the policies. Skipping control conflict check."
             return $false # No conflict if one is not defined
