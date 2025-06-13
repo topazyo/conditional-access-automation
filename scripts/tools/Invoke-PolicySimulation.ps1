@@ -153,9 +153,9 @@ Write-Warning "DISCLAIMER: This is a simplified local simulation, not a substitu
 
 # --- 1. LOAD AND VALIDATE POLICY DEFINITION ---
 Write-Host "`n--- Loading Policy Definition ---" -ForegroundColor Green
-$PolicyToSimulate = $null
+$policyToSimulate = $null # Renamed from $PolicyToSimulate
 try {
-    $PolicyToSimulate = Get-Content -Path $PolicyDefinitionPath -Raw | ConvertFrom-Json -ErrorAction Stop
+    $policyToSimulate = Get-Content -Path $PolicyDefinitionPath -Raw | ConvertFrom-Json -ErrorAction Stop # Renamed
     Write-Host "Successfully parsed policy definition file: $PolicyDefinitionPath"
 }
 catch {
@@ -163,12 +163,12 @@ catch {
     exit 1
 }
 
-if ($null -eq $PolicyToSimulate -or -not $PolicyToSimulate.PSObject.Properties['DisplayName'] -or `
-    -not $PolicyToSimulate.PSObject.Properties['Conditions'] -or -not $PolicyToSimulate.PSObject.Properties['GrantControls']) {
+if ($null -eq $policyToSimulate -or -not $policyToSimulate.PSObject.Properties['DisplayName'] -or ` # Renamed
+    -not $policyToSimulate.PSObject.Properties['Conditions'] -or -not $policyToSimulate.PSObject.Properties['GrantControls']) { # Renamed
     Write-Error "Policy definition from '$PolicyDefinitionPath' is invalid or missing essential top-level properties (DisplayName, Conditions, GrantControls)."
     exit 1
 }
-Write-Host "Policy to Simulate: '$($PolicyToSimulate.DisplayName)' (State: $($PolicyToSimulate.State))"
+Write-Host "Policy to Simulate: '$($policyToSimulate.DisplayName)' (State: $($policyToSimulate.State))" # Renamed
 
 
 # --- 2. GATHER CONTEXTUAL DATA (Conceptual) ---
@@ -179,12 +179,12 @@ $existingApplicablePolicies = @()
 
 # --- 3. EVALUATE THE POLICY-TO-SIMULATE AGAINST SIMULATED CONDITIONS ---
 Write-Host "`n--- Policy Evaluation (Simulated) ---" -ForegroundColor Green
-$userMatch = Test-UserConditionMatch -userConditions $PolicyToSimulate.Conditions.Users -simUserUPN $SimUserPrincipalName
-$applicationMatch = Test-ApplicationConditionMatch -appConditions $PolicyToSimulate.Conditions.Applications -simApplicationId $SimApplicationId
-$locationMatch = Test-LocationConditionMatch -locationConditions $PolicyToSimulate.Conditions.Locations -simUserLocationId $SimUserLocationId
-$platformMatch = Test-PlatformConditionMatch -platformConditions $PolicyToSimulate.Conditions.Platforms -simUserDevicePlatform $SimUserDevicePlatform
-$signInRiskMatch = Test-RiskLevelConditionMatch -policyRiskLevels $PolicyToSimulate.Conditions.SignInRiskLevels -simRiskLevel $SimSignInRiskLevel -riskTypeForLogging "Sign-in"
-$userRiskMatch = Test-RiskLevelConditionMatch -policyRiskLevels $PolicyToSimulate.Conditions.UserRiskLevels -simRiskLevel $SimUserRiskLevel -riskTypeForLogging "User"
+$userMatch = Test-UserConditionMatch -userConditions $policyToSimulate.Conditions.Users -simUserUPN $SimUserPrincipalName # Renamed
+$applicationMatch = Test-ApplicationConditionMatch -appConditions $policyToSimulate.Conditions.Applications -simApplicationId $SimApplicationId # Renamed
+$locationMatch = Test-LocationConditionMatch -locationConditions $policyToSimulate.Conditions.Locations -simUserLocationId $SimUserLocationId # Renamed
+$platformMatch = Test-PlatformConditionMatch -platformConditions $policyToSimulate.Conditions.Platforms -simUserDevicePlatform $SimUserDevicePlatform # Renamed
+$signInRiskMatch = Test-RiskLevelConditionMatch -policyRiskLevels $policyToSimulate.Conditions.SignInRiskLevels -simRiskLevel $SimSignInRiskLevel -riskTypeForLogging "Sign-in" # Renamed
+$userRiskMatch = Test-RiskLevelConditionMatch -policyRiskLevels $policyToSimulate.Conditions.UserRiskLevels -simRiskLevel $SimUserRiskLevel -riskTypeForLogging "User" # Renamed
 
 Write-Host "Device Filter/State Condition: Not evaluated by this script version." # Placeholder for $SimUserDeviceState
 
@@ -192,7 +192,7 @@ $allConditionsMet = $userMatch -and $applicationMatch -and $locationMatch -and $
 
 # --- 4. OUTPUT RESULT ---
 Write-Host "`n--- Policy Evaluation Result ---" -ForegroundColor Cyan
-Write-Host "Policy: '$($PolicyToSimulate.DisplayName)'"
+Write-Host "Policy: '$($policyToSimulate.DisplayName)'" # Renamed
 Write-Host "Simulated User UPN: $SimUserPrincipalName"
 Write-Host "Simulated Application ID: $SimApplicationId"
 Write-Host "Simulated Location ID: $(if ($SimUserLocationId) {$SimUserLocationId} else {'Not Provided'})"
@@ -210,9 +210,9 @@ Write-Host "User Risk Condition Met: $userRiskMatch"
 
 if ($allConditionsMet) {
     Write-Host "Outcome: Policy WOULD LIKELY APPLY based on simulated User, Application, Location, Platform, Sign-in Risk, and User Risk conditions." -ForegroundColor Green
-    Write-Host "Grant Controls from this policy: $($PolicyToSimulate.GrantControls | ConvertTo-Json -Depth 3 -Compress)"
-    if ($PolicyToSimulate.SessionControls) {
-        Write-Host "Session Controls from this policy: $($PolicyToSimulate.SessionControls | ConvertTo-Json -Depth 3 -Compress)"
+    Write-Host "Grant Controls from this policy: $($policyToSimulate.GrantControls | ConvertTo-Json -Depth 3 -Compress)" # Renamed
+    if ($policyToSimulate.SessionControls) { # Renamed
+        Write-Host "Session Controls from this policy: $($policyToSimulate.SessionControls | ConvertTo-Json -Depth 3 -Compress)" # Renamed
     }
 } else {
     Write-Host "Outcome: Policy WOULD LIKELY NOT APPLY based on the evaluated conditions." -ForegroundColor Yellow

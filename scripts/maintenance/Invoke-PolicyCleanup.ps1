@@ -24,38 +24,38 @@ function Merge-CaLocationConditions {
     Write-Verbose "Merge-CaLocationConditions: Merging location conditions."
     $mergedLocations = @{ includeLocations = @(); excludeLocations = @() }
 
-    $locA_include = if ($null -ne $locA -and $locA.PSObject.Properties.Name -contains 'includeLocations') { @($locA.includeLocations) } else { @() }
-    $locB_include = if ($null -ne $locB -and $locB.PSObject.Properties.Name -contains 'includeLocations') { @($locB.includeLocations) } else { @() }
-    $locA_exclude = if ($null -ne $locA -and $locA.PSObject.Properties.Name -contains 'excludeLocations') { @($locA.excludeLocations) } else { @() }
-    $locB_exclude = if ($null -ne $locB -and $locB.PSObject.Properties.Name -contains 'excludeLocations') { @($locB.excludeLocations) } else { @() }
+    $locAInclude = if ($null -ne $locA -and $locA.PSObject.Properties.Name -contains 'includeLocations') { @($locA.includeLocations) } else { @() }
+    $locBInclude = if ($null -ne $locB -and $locB.PSObject.Properties.Name -contains 'includeLocations') { @($locB.includeLocations) } else { @() }
+    $locAExclude = if ($null -ne $locA -and $locA.PSObject.Properties.Name -contains 'excludeLocations') { @($locA.excludeLocations) } else { @() }
+    $locBExclude = if ($null -ne $locB -and $locB.PSObject.Properties.Name -contains 'excludeLocations') { @($locB.excludeLocations) } else { @() }
 
     # Handle includeLocations
-    if ($locA_include -contains 'AllTrusted' -or $locB_include -contains 'AllTrusted') {
+    if ($locAInclude -contains 'AllTrusted' -or $locBInclude -contains 'AllTrusted') {
         $mergedLocations.includeLocations = @('AllTrusted') # "AllTrusted" wins over "All" or specific GUIDs if present in either
         Write-Verbose "  IncludeLocations: 'AllTrusted' found in one input, setting merged to 'AllTrusted'."
-    } elseif ($locA_include -contains 'All' -and $locB_include -contains 'All') {
+    } elseif ($locAInclude -contains 'All' -and $locBInclude -contains 'All') {
         $mergedLocations.includeLocations = @('All')
         Write-Verbose "  IncludeLocations: Both inputs 'All', setting merged to 'All'."
-    } elseif ($locA_include -contains 'All') { # locA is All, locB is specific or empty
-        $mergedLocations.includeLocations = $locB_include # Specific wins over 'All'
+    } elseif ($locAInclude -contains 'All') { # locA is All, locB is specific or empty
+        $mergedLocations.includeLocations = $locBInclude # Specific wins over 'All'
         Write-Verbose "  IncludeLocations: One input 'All', other specific/empty. Using specific/empty: $($mergedLocations.includeLocations -join ', ')"
-    } elseif ($locB_include -contains 'All') { # locB is All, locA is specific or empty
-        $mergedLocations.includeLocations = $locA_include # Specific wins over 'All'
+    } elseif ($locBInclude -contains 'All') { # locB is All, locA is specific or empty
+        $mergedLocations.includeLocations = $locAInclude # Specific wins over 'All'
         Write-Verbose "  IncludeLocations: One input 'All', other specific/empty. Using specific/empty: $($mergedLocations.includeLocations -join ', ')"
-    } elseif ($locA_include.Count -gt 0 -and $locB_include.Count -gt 0) { # Both specific lists
-        $mergedLocations.includeLocations = ($locA_include | Where-Object { $locB_include -contains $_ } | Select-Object -Unique)
+    } elseif ($locAInclude.Count -gt 0 -and $locBInclude.Count -gt 0) { # Both specific lists
+        $mergedLocations.includeLocations = ($locAInclude | Where-Object { $locBInclude -contains $_ } | Select-Object -Unique)
         Write-Verbose "  IncludeLocations: Both specific lists. Intersection: $($mergedLocations.includeLocations -join ', ')"
-    } elseif ($locA_include.Count -gt 0) { # Only locA has specific
-        $mergedLocations.includeLocations = $locA_include
+    } elseif ($locAInclude.Count -gt 0) { # Only locA has specific
+        $mergedLocations.includeLocations = $locAInclude
          Write-Verbose "  IncludeLocations: Only one input has specifics. Using: $($mergedLocations.includeLocations -join ', ')"
-    } elseif ($locB_include.Count -gt 0) { # Only locB has specific
-        $mergedLocations.includeLocations = $locB_include
+    } elseif ($locBInclude.Count -gt 0) { # Only locB has specific
+        $mergedLocations.includeLocations = $locBInclude
         Write-Verbose "  IncludeLocations: Only one input has specifics. Using: $($mergedLocations.includeLocations -join ', ')"
     }
     # If both empty, it remains @()
 
     # Handle excludeLocations (Union)
-    $mergedLocations.excludeLocations = ($locA_exclude + $locB_exclude | Select-Object -Unique)
+    $mergedLocations.excludeLocations = ($locAExclude + $locBExclude | Select-Object -Unique)
     Write-Verbose "  ExcludeLocations: Union: $($mergedLocations.excludeLocations -join ', ')"
 
     return $mergedLocations
@@ -69,35 +69,35 @@ function Merge-CaPlatformConditions {
     Write-Verbose "Merge-CaPlatformConditions: Merging platform conditions."
     $mergedPlatforms = @{ includePlatforms = @(); excludePlatforms = @() }
 
-    $platA_include = if ($null -ne $platA -and $platA.PSObject.Properties.Name -contains 'includePlatforms') { @($platA.includePlatforms) } else { @() }
-    $platB_include = if ($null -ne $platB -and $platB.PSObject.Properties.Name -contains 'includePlatforms') { @($platB.includePlatforms) } else { @() }
-    $platA_exclude = if ($null -ne $platA -and $platA.PSObject.Properties.Name -contains 'excludePlatforms') { @($platA.excludePlatforms) } else { @() }
-    $platB_exclude = if ($null -ne $platB -and $platB.PSObject.Properties.Name -contains 'excludePlatforms') { @($platB.excludePlatforms) } else { @() }
+    $platAInclude = if ($null -ne $platA -and $platA.PSObject.Properties.Name -contains 'includePlatforms') { @($platA.includePlatforms) } else { @() }
+    $platBInclude = if ($null -ne $platB -and $platB.PSObject.Properties.Name -contains 'includePlatforms') { @($platB.includePlatforms) } else { @() }
+    $platAExclude = if ($null -ne $platA -and $platA.PSObject.Properties.Name -contains 'excludePlatforms') { @($platA.excludePlatforms) } else { @() }
+    $platBExclude = if ($null -ne $platB -and $platB.PSObject.Properties.Name -contains 'excludePlatforms') { @($platB.excludePlatforms) } else { @() }
 
     # Handle includePlatforms
-    if (($platA_include -contains 'all') -and ($platB_include -contains 'all')) {
+    if (($platAInclude -contains 'all') -and ($platBInclude -contains 'all')) {
         $mergedPlatforms.includePlatforms = @('all')
         Write-Verbose "  IncludePlatforms: Both 'all', merged is 'all'."
-    } elseif ($platA_include -contains 'all') { # platA is 'all', platB is specific or empty
-        $mergedPlatforms.includePlatforms = $platB_include # Specific wins
+    } elseif ($platAInclude -contains 'all') { # platA is 'all', platB is specific or empty
+        $mergedPlatforms.includePlatforms = $platBInclude # Specific wins
         Write-Verbose "  IncludePlatforms: One 'all', other specific. Using specific: $($mergedPlatforms.includePlatforms -join ', ')"
-    } elseif ($platB_include -contains 'all') { # platB is 'all', platA is specific or empty
-        $mergedPlatforms.includePlatforms = $platA_include # Specific wins
+    } elseif ($platBInclude -contains 'all') { # platB is 'all', platA is specific or empty
+        $mergedPlatforms.includePlatforms = $platAInclude # Specific wins
         Write-Verbose "  IncludePlatforms: One 'all', other specific. Using specific: $($mergedPlatforms.includePlatforms -join ', ')"
-    } elseif ($platA_include.Count -gt 0 -and $platB_include.Count -gt 0) { # Both specific
-        $mergedPlatforms.includePlatforms = ($platA_include | Where-Object { $platB_include -contains $_ } | Select-Object -Unique)
+    } elseif ($platAInclude.Count -gt 0 -and $platBInclude.Count -gt 0) { # Both specific
+        $mergedPlatforms.includePlatforms = ($platAInclude | Where-Object { $platBInclude -contains $_ } | Select-Object -Unique)
         Write-Verbose "  IncludePlatforms: Both specific. Intersection: $($mergedPlatforms.includePlatforms -join ', ')"
-    } elseif ($platA_include.Count -gt 0) { # Only platA has specifics
-        $mergedPlatforms.includePlatforms = $platA_include
+    } elseif ($platAInclude.Count -gt 0) { # Only platA has specifics
+        $mergedPlatforms.includePlatforms = $platAInclude
         Write-Verbose "  IncludePlatforms: Only A specific. Using: $($mergedPlatforms.includePlatforms -join ', ')"
-    } elseif ($platB_include.Count -gt 0) { # Only platB has specifics
-        $mergedPlatforms.includePlatforms = $platB_include
+    } elseif ($platBInclude.Count -gt 0) { # Only platB has specifics
+        $mergedPlatforms.includePlatforms = $platBInclude
         Write-Verbose "  IncludePlatforms: Only B specific. Using: $($mergedPlatforms.includePlatforms -join ', ')"
     }
     # If both empty, it remains @()
 
     # Handle excludePlatforms (Union)
-    $mergedPlatforms.excludePlatforms = ($platA_exclude + $platB_exclude | Select-Object -Unique)
+    $mergedPlatforms.excludePlatforms = ($platAExclude + $platBExclude | Select-Object -Unique)
     Write-Verbose "  ExcludePlatforms: Union: $($mergedPlatforms.excludePlatforms -join ', ')"
 
     return $mergedPlatforms
@@ -163,38 +163,38 @@ function Merge-CaSessionControls {
     $mergedSession = Copy-CaObject $sessionA # Start with a copy of A
 
     # SignInFrequency: Stricter (smaller number of hours) wins
-    $sifA_value = $sessionA.PSObject.Properties['signInFrequency'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
-    $sifB_value = $sessionB.PSObject.Properties['signInFrequency'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
+    $sifAValue = $sessionA.PSObject.Properties['signInFrequency'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
+    $sifBValue = $sessionB.PSObject.Properties['signInFrequency'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
 
-    if ($null -ne $sifA_value -and $null -ne $sifB_value) {
-        $sifA_type = $sifA_value.PSObject.Properties['type'] | Select-Object -ExpandProperty Value
-        $sifA_hours = if ($sifA_type -eq 'days') { $sifA_value.value * 24 } else { $sifA_value.value }
+    if ($null -ne $sifAValue -and $null -ne $sifBValue) {
+        $sifAType = $sifAValue.PSObject.Properties['type'] | Select-Object -ExpandProperty Value
+        $sifAHours = if ($sifAType -eq 'days') { $sifAValue.value * 24 } else { $sifAValue.value }
 
-        $sifB_type = $sifB_value.PSObject.Properties['type'] | Select-Object -ExpandProperty Value
-        $sifB_hours = if ($sifB_type -eq 'days') { $sifB_value.value * 24 } else { $sifB_value.value }
+        $sifBType = $sifBValue.PSObject.Properties['type'] | Select-Object -ExpandProperty Value
+        $sifBHours = if ($sifBType -eq 'days') { $sifBValue.value * 24 } else { $sifBValue.value }
 
-        if ($sifB_hours -lt $sifA_hours) {
-            Write-Verbose "  SignInFrequency: B ($($sifB_hours)h) is stricter than A ($($sifA_hours)h). Using B's."
-            $mergedSession.signInFrequency = Copy-CaObject $sifB_value
+        if ($sifBHours -lt $sifAHours) {
+            Write-Verbose "  SignInFrequency: B ($($sifBHours)h) is stricter than A ($($sifAHours)h). Using B's."
+            $mergedSession.signInFrequency = Copy-CaObject $sifBValue
         } else {
-            Write-Verbose "  SignInFrequency: A ($($sifA_hours)h) is stricter or equal to B ($($sifB_hours)h). Using A's (or keeping A's)."
+            Write-Verbose "  SignInFrequency: A ($($sifAHours)h) is stricter or equal to B ($($sifBHours)h). Using A's (or keeping A's)."
             # No change needed if A is stricter or equal and we started with A
         }
-    } elseif ($null -ne $sifB_value) { # Only B has SIF
+    } elseif ($null -ne $sifBValue) { # Only B has SIF
         Write-Verbose "  SignInFrequency: Only B has SIF. Using B's."
-        $mergedSession.signInFrequency = Copy-CaObject $sifB_value
+        $mergedSession.signInFrequency = Copy-CaObject $sifBValue
     }
     # If only A has SIF, it's already in $mergedSession. If neither, it remains as per $sessionA (potentially null).
 
     # PersistentBrowserSession: false wins (stricter)
-    $pbsA_enabled = $sessionA.PSObject.Properties['persistentBrowserSession'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
-    $pbsB_enabled = $sessionB.PSObject.Properties['persistentBrowserSession'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
+    $pbsAEnabled = $sessionA.PSObject.Properties['persistentBrowserSession'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
+    $pbsBEnabled = $sessionB.PSObject.Properties['persistentBrowserSession'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
 
-    if (($null -ne $pbsA_enabled -and -not $pbsA_enabled) -or ($null -ne $pbsB_enabled -and -not $pbsB_enabled)) {
+    if (($null -ne $pbsAEnabled -and -not $pbsAEnabled) -or ($null -ne $pbsBEnabled -and -not $pbsBEnabled)) {
         Write-Verbose "  PersistentBrowserSession: One input has isEnabled=false. Setting to false."
         if ($null -eq $mergedSession.persistentBrowserSession) { $mergedSession.persistentBrowserSession = @{} }
         $mergedSession.persistentBrowserSession.isEnabled = $false
-    } elseif (($null -ne $pbsA_enabled -and $pbsA_enabled) -or ($null -ne $pbsB_enabled -and $pbsB_enabled)) { # At least one is true, and none are false
+    } elseif (($null -ne $pbsAEnabled -and $pbsAEnabled) -or ($null -ne $pbsBEnabled -and $pbsBEnabled)) { # At least one is true, and none are false
          Write-Verbose "  PersistentBrowserSession: At least one is true, none are false. Setting to true."
         if ($null -eq $mergedSession.persistentBrowserSession) { $mergedSession.persistentBrowserSession = @{} }
         $mergedSession.persistentBrowserSession.isEnabled = $true
@@ -202,27 +202,27 @@ function Merge-CaSessionControls {
     # If both null, it remains as per $sessionA
 
     # CloudAppSecurity: true wins. 'blockDownloads' > 'monitorOnly' > 'none'
-    $casA_enabled = $sessionA.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
-    $casB_enabled = $sessionB.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
+    $casAEnabled = $sessionA.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
+    $casBEnabled = $sessionB.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty isEnabled -ErrorAction SilentlyContinue
 
-    if (($null -ne $casA_enabled -and $casA_enabled) -or ($null -ne $casB_enabled -and $casB_enabled)) {
+    if (($null -ne $casAEnabled -and $casAEnabled) -or ($null -ne $casBEnabled -and $casBEnabled)) {
         Write-Verbose "  CloudAppSecurity: At least one is true. Setting isEnabled=true."
         if ($null -eq $mergedSession.cloudAppSecurity) { $mergedSession.cloudAppSecurity = @{} }
         $mergedSession.cloudAppSecurity.isEnabled = $true
 
-        $casA_type = $sessionA.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty cloudAppSecuritySessionType -ErrorAction SilentlyContinue
-        $casB_type = $sessionB.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty cloudAppSecuritySessionType -ErrorAction SilentlyContinue
+        $casAType = $sessionA.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty cloudAppSecuritySessionType -ErrorAction SilentlyContinue
+        $casBType = $sessionB.PSObject.Properties['cloudAppSecurity'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty cloudAppSecuritySessionType -ErrorAction SilentlyContinue
 
         $typePrecedence = @{ 'blockDownloads' = 3; 'monitorOnly' = 2; 'none' = 1 }
-        if (($null -ne $casA_type -and $null -eq $casB_type) -or `
-            ($null -ne $casA_type -and $null -ne $casB_type -and $typePrecedence[$casA_type] -ge $typePrecedence[$casB_type])) {
-            $mergedSession.cloudAppSecurity.cloudAppSecuritySessionType = $casA_type
-            Write-Verbose "  CloudAppSecurity SessionType: Using A's type '$($casA_type)'."
-        } elseif ($null -ne $casB_type) {
-            $mergedSession.cloudAppSecurity.cloudAppSecuritySessionType = $casB_type
-            Write-Verbose "  CloudAppSecurity SessionType: Using B's type '$($casB_type)'."
+        if (($null -ne $casAType -and $null -eq $casBType) -or `
+            ($null -ne $casAType -and $null -ne $casBType -and $typePrecedence[$casAType] -ge $typePrecedence[$casBType])) {
+            $mergedSession.cloudAppSecurity.cloudAppSecuritySessionType = $casAType
+            Write-Verbose "  CloudAppSecurity SessionType: Using A's type '$($casAType)'."
+        } elseif ($null -ne $casBType) {
+            $mergedSession.cloudAppSecurity.cloudAppSecuritySessionType = $casBType
+            Write-Verbose "  CloudAppSecurity SessionType: Using B's type '$($casBType)'."
         }
-    } elseif (($null -ne $casA_enabled -and -not $casA_enabled) -or ($null -ne $casB_enabled -and -not $casB_enabled)) { # At least one is explicitly false
+    } elseif (($null -ne $casAEnabled -and -not $casAEnabled) -or ($null -ne $casBEnabled -and -not $casBEnabled)) { # At least one is explicitly false
         Write-Verbose "  CloudAppSecurity: At least one is false. Setting isEnabled=false."
         if ($null -eq $mergedSession.cloudAppSecurity) { $mergedSession.cloudAppSecurity = @{} }
         $mergedSession.cloudAppSecurity.isEnabled = $false
@@ -230,43 +230,43 @@ function Merge-CaSessionControls {
      # If both null, it remains as per $sessionA
 
     # DisableResilienceDefaults: false wins (stricter)
-    $drdA = $sessionA.PSObject.Properties['disableResilienceDefaults'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
-    $drdB = $sessionB.PSObject.Properties['disableResilienceDefaults'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
-    if (($null -ne $drdA -and -not $drdA) -or ($null -ne $drdB -and -not $drdB)) { # If either is explicitly false
+    $drdAValue = $sessionA.PSObject.Properties['disableResilienceDefaults'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
+    $drdBValue = $sessionB.PSObject.Properties['disableResilienceDefaults'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
+    if (($null -ne $drdAValue -and -not $drdAValue) -or ($null -ne $drdBValue -and -not $drdBValue)) { # If either is explicitly false
         Write-Verbose "  DisableResilienceDefaults: One is false. Setting to false."
         $mergedSession.disableResilienceDefaults = $false
-    } elseif (($null -ne $drdA -and $drdA) -or ($null -ne $drdB -and $drdB)) { # If at least one is true (and none are false)
+    } elseif (($null -ne $drdAValue -and $drdAValue) -or ($null -ne $drdBValue -and $drdBValue)) { # If at least one is true (and none are false)
          Write-Verbose "  DisableResilienceDefaults: One is true, none false. Setting to true."
         $mergedSession.disableResilienceDefaults = $true
     }
     # If both null, it remains as per $sessionA
 
     # ApplicationEnforcedRestrictions: if one defined, take it. If both, A takes precedence (can be refined)
-    $aerA = $sessionA.PSObject.Properties['applicationEnforcedRestrictions'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
-    $aerB = $sessionB.PSObject.Properties['applicationEnforcedRestrictions'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
-    if ($null -ne $aerA) {
-        $mergedSession.applicationEnforcedRestrictions = Copy-CaObject $aerA
+    $aerAValue = $sessionA.PSObject.Properties['applicationEnforcedRestrictions'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
+    $aerBValue = $sessionB.PSObject.Properties['applicationEnforcedRestrictions'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
+    if ($null -ne $aerAValue) {
+        $mergedSession.applicationEnforcedRestrictions = Copy-CaObject $aerAValue
         Write-Verbose "  ApplicationEnforcedRestrictions: Using A's."
-    } elseif ($null -ne $aerB) {
-        $mergedSession.applicationEnforcedRestrictions = Copy-CaObject $aerB
+    } elseif ($null -ne $aerBValue) {
+        $mergedSession.applicationEnforcedRestrictions = Copy-CaObject $aerBValue
         Write-Verbose "  ApplicationEnforcedRestrictions: Using B's as A was null."
     }
 
     # ContinuousAccessEvaluation: 'strictLocation' wins. If one defined, take it.
-    $caeA_mode = $sessionA.PSObject.Properties['continuousAccessEvaluation'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty mode -ErrorAction SilentlyContinue
-    $caeB_mode = $sessionB.PSObject.Properties['continuousAccessEvaluation'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty mode -ErrorAction SilentlyContinue
-    if ($caeA_mode -eq 'strictLocation' -or $caeB_mode -eq 'strictLocation') {
+    $caeAMode = $sessionA.PSObject.Properties['continuousAccessEvaluation'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty mode -ErrorAction SilentlyContinue
+    $caeBMode = $sessionB.PSObject.Properties['continuousAccessEvaluation'] | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue | Select-Object -ExpandProperty mode -ErrorAction SilentlyContinue
+    if ($caeAMode -eq 'strictLocation' -or $caeBMode -eq 'strictLocation') {
         Write-Verbose "  ContinuousAccessEvaluation: 'strictLocation' found. Setting to 'strictLocation'."
         if ($null -eq $mergedSession.continuousAccessEvaluation) { $mergedSession.continuousAccessEvaluation = @{} }
         $mergedSession.continuousAccessEvaluation.mode = 'strictLocation'
-    } elseif ($null -ne $caeA_mode) {
+    } elseif ($null -ne $caeAMode) {
         if ($null -eq $mergedSession.continuousAccessEvaluation) { $mergedSession.continuousAccessEvaluation = @{} }
-        $mergedSession.continuousAccessEvaluation.mode = $caeA_mode
-         Write-Verbose "  ContinuousAccessEvaluation: Using A's mode '$($caeA_mode)'."
-    } elseif ($null -ne $caeB_mode) {
+        $mergedSession.continuousAccessEvaluation.mode = $caeAMode
+         Write-Verbose "  ContinuousAccessEvaluation: Using A's mode '$($caeAMode)'."
+    } elseif ($null -ne $caeBMode) {
         if ($null -eq $mergedSession.continuousAccessEvaluation) { $mergedSession.continuousAccessEvaluation = @{} }
-        $mergedSession.continuousAccessEvaluation.mode = $caeB_mode
-        Write-Verbose "  ContinuousAccessEvaluation: Using B's mode '$($caeB_mode)' as A was null."
+        $mergedSession.continuousAccessEvaluation.mode = $caeBMode
+        Write-Verbose "  ContinuousAccessEvaluation: Using B's mode '$($caeBMode)' as A was null."
     }
 
     return $mergedSession
@@ -328,30 +328,29 @@ function Find-RedundantPolicies([array]$policies) {
 
             # Criteria 2: Identical Grant Controls (simplistic: compare string representation)
             # A more robust check would compare each property of GrantControls.
-            $grantControlsA = $policyA.GrantControls | ConvertTo-Json -Depth 5 -Compress
-            $grantControlsB = $policyB.GrantControls | ConvertTo-Json -Depth 5 -Compress
-            if ($grantControlsA -ne $grantControlsB) {
+            $grantControlsAJson = $policyA.GrantControls | ConvertTo-Json -Depth 5 -Compress # Renamed
+            $grantControlsBJson = $policyB.GrantControls | ConvertTo-Json -Depth 5 -Compress # Renamed
+            if ($grantControlsAJson -ne $grantControlsBJson) { # Updated variable
                 continue
             }
 
             # Criteria 3: Identical User Conditions
             # Comparing arrays requires converting them to a comparable string or element-wise comparison.
-            $usersA_Include = ($policyA.Conditions.Users.IncludeUsers | Sort-Object) -join ','
-            $usersB_Include = ($policyB.Conditions.Users.IncludeUsers | Sort-Object) -join ','
-            $usersA_Exclude = ($policyA.Conditions.Users.ExcludeUsers | Sort-Object) -join ','
-            $usersB_Exclude = ($policyB.Conditions.Users.ExcludeUsers | Sort-Object) -join ','
-
-            if (($usersA_Include -ne $usersB_Include) -or ($usersA_Exclude -ne $usersB_Exclude)) {
+            $usersAInclude = ($policyA.Conditions.Users.IncludeUsers | Sort-Object) -join ',' # Renamed
+            $usersBInclude = ($policyB.Conditions.Users.IncludeUsers | Sort-Object) -join ',' # Renamed
+            $usersAExclude = ($policyA.Conditions.Users.ExcludeUsers | Sort-Object) -join ',' # Renamed
+            $usersBExclude = ($policyB.Conditions.Users.ExcludeUsers | Sort-Object) -join ',' # Renamed
+            if (($usersAInclude -ne $usersBInclude) -or ($usersAExclude -ne $usersBExclude)) { # Updated variables
                 continue
             }
 
             # Criteria 4: Identical Application Conditions
-            $appsA_Include = ($policyA.Conditions.Applications.IncludeApplications | Sort-Object) -join ','
-            $appsB_Include = ($policyB.Conditions.Applications.IncludeApplications | Sort-Object) -join ','
-            $appsA_Exclude = ($policyA.Conditions.Applications.ExcludeApplications | Sort-Object) -join ','
-            $appsB_Exclude = ($policyB.Conditions.Applications.ExcludeApplications | Sort-Object) -join ','
+            $appsAInclude = ($policyA.Conditions.Applications.IncludeApplications | Sort-Object) -join ',' # Renamed
+            $appsBInclude = ($policyB.Conditions.Applications.IncludeApplications | Sort-Object) -join ',' # Renamed
+            $appsAExclude = ($policyA.Conditions.Applications.ExcludeApplications | Sort-Object) -join ',' # Renamed
+            $appsBExclude = ($policyB.Conditions.Applications.ExcludeApplications | Sort-Object) -join ',' # Renamed
 
-            if (($appsA_Include -ne $appsB_Include) -or ($appsA_Exclude -ne $appsB_Exclude)) {
+            if (($appsAInclude -ne $appsBInclude) -or ($appsAExclude -ne $appsBExclude)) { # Updated variables
                 continue
             }
 
@@ -560,18 +559,19 @@ function Merge-RedundantPolicies {
         else {
             # This part requires a PolicyManager instance.
             # Assuming $Global:PolicyManagerInstance or similar, or passed as param.
-            # For now, this will cause an error if $script:PolicyManager is not set.
+            # For now, this will cause an error if $script:policyManager is not set.
             # The script structure needs a global or passed PolicyManager for this to work.
-            if ($null -eq $script:PolicyManager) {
+            if ($null -eq $script:policyManager) { # Updated script-global variable name
                  Write-Warning "PolicyManager instance not available. Cannot perform merge operations."
                  Write-Warning "Skipping actual merge for set: $($policyNames -join ', ')"
-                 # Fallback to old informational behavior
-                 Merge-Policies $set.Policies # Calls the old placeholder for info
+                 # Fallback to old informational behavior (Note: Merge-Policies placeholder is now removed, this would error)
+                 # To maintain script flow without erroring if policyManager is null and merge is attempted:
+                 Write-Warning "Original Merge-Policies placeholder was removed. Cannot fall back to informational display without a PolicyManager instance."
             } else {
                  Write-Host "Attempting to merge policies: $($policyNames -join ', ')"
                  # The new function expects two policies, not an array.
                  # Find-RedundantPolicies currently creates pairs.
-                 Invoke-CaPolicyMerge -PolicyA $set.Policies[0] -PolicyB $set.Policies[1] -PolicyManager $script:PolicyManager -WhatIf:$WhatIf # Pass the script's WhatIf
+                 Invoke-CaPolicyMerge -PolicyA $set.Policies[0] -PolicyB $set.Policies[1] -PolicyManager $script:policyManager -WhatIf:$WhatIf # Updated script-global variable name
                  # If -WhatIf is passed, ShouldProcess in Invoke-CaPolicyMerge will handle it.
             }
         }
@@ -613,12 +613,12 @@ if ($null -eq $allCaPolicies) {
     # The helper functions themselves do not require it.
     if (-not $WhatIf) {
         try {
-            $script:PolicyManager = [ConditionalAccessPolicyManager]::new($TenantId)
+            $script:policyManager = [ConditionalAccessPolicyManager]::new($TenantId) # Updated script-global variable name
             Write-Verbose "PolicyManager instance created for merge operations."
         }
         catch {
             Write-Error "Failed to instantiate PolicyManager: $($_.Exception.Message). Merge operations will be skipped."
-            $script:PolicyManager = $null # Ensure it's null so merge logic can fallback or warn
+            $script:policyManager = $null # Ensure it's null so merge logic can fallback or warn
         }
     }
     Merge-RedundantPolicies -AllPolicies $allCaPolicies -WhatIfMode:$WhatIf # Pass WhatIf switch
