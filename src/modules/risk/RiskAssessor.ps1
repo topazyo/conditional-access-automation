@@ -60,9 +60,9 @@ class RiskAssessor {
                     # Otherwise, it's a new factor or overriding a non-hashtable one (if any)
                     # Basic validation: if the factorValue itself is a hashtable, ensure its sub-values are numeric (common for risk factors)
                     if ($factorValue -is [hashtable]) {
-                        foreach ($subKeyVal in $factorValue.Values) {
-                            if ($subKeyVal -isnot [double] -and $subKeyVal -isnot [int]) {
-                                Write-Warning "Value '$subKeyVal' for sub-key under custom factor '$factorName' is not numeric. Ensure all terminal risk factor values are numbers."
+                        foreach ($subKeyValue in $factorValue.Values) { # Renamed from $subKeyVal
+                            if ($subKeyValue -isnot [double] -and $subKeyValue -isnot [int]) {
+                                Write-Warning "Value '$subKeyValue' for sub-key under custom factor '$factorName' is not numeric. Ensure all terminal risk factor values are numbers."
                                 # Depending on strictness, could skip this subKey or the whole factor.
                             }
                         }

@@ -30,32 +30,32 @@ $spConfig = @{
 #### Development Environment
 ```powershell
 # Deploy to development
-./scripts/deployment/deploy-policies.ps1 `
+./scripts/deployment/Invoke-PolicyDeployment.ps1 `
     -Environment Development `
     -ConfigPath ./templates/policies/dev-policies.yaml `
     -WhatIf
 ```
-(Note: The script `deploy-policies.ps1` with parameters like `-Environment` and `-EnableMonitoring` is a conceptual placeholder. The current primary deployment script is `scripts/deployment/deploy.ps1`, which uses parameters such as `-ConfigPath 'path/to/your/policy/definitions/'` and `-WhatIf` for individual or bulk policy deployment from local YAML/JSON definitions.)
+(Note: The script `Invoke-PolicyDeployment.ps1` with parameters like `-Environment` and `-EnableMonitoring` is a conceptual placeholder. The current primary deployment script is `scripts/deployment/Invoke-PolicyDeployment.ps1`, which uses parameters such as `-ConfigPath 'path/to/your/policy/definitions/'` and `-WhatIf` for individual or bulk policy deployment from local YAML/JSON definitions.)
 
 #### Staging Environment
 ```powershell
 # Deploy to staging with monitoring
-./scripts/deployment/deploy-policies.ps1 `
+./scripts/deployment/Invoke-PolicyDeployment.ps1 `
     -Environment Staging `
     -ConfigPath ./templates/policies/staging-policies.yaml `
     -EnableMonitoring
 ```
-(Note: The script `deploy-policies.ps1` is a conceptual placeholder. Refer to `scripts/deployment/deploy.ps1` for current deployment capabilities, which do not include environment-specific flags or direct monitoring enablement as shown here.)
+(Note: The script `Invoke-PolicyDeployment.ps1` is a conceptual placeholder. Refer to `scripts/deployment/Invoke-PolicyDeployment.ps1` for current deployment capabilities, which do not include environment-specific flags or direct monitoring enablement as shown here.)
 
 #### Production Environment
 ```powershell
 # Production deployment with approval workflow
-./scripts/deployment/deploy-policies.ps1 `
+./scripts/deployment/Invoke-PolicyDeployment.ps1 `
     -Environment Production `
     -ConfigPath ./templates/policies/prod-policies.yaml `
     -RequireApproval
 ```
-(Note: The script `deploy-policies.ps1` is a conceptual placeholder. The script `scripts/deployment/deploy.ps1` should be integrated into your CI/CD pipeline with appropriate approval gates for production deployments.)
+(Note: The script `Invoke-PolicyDeployment.ps1` is a conceptual placeholder. The script `scripts/deployment/Invoke-PolicyDeployment.ps1` should be integrated into your CI/CD pipeline with appropriate approval gates for production deployments.)
 
 ### 3. Monitoring Setup
 ```powershell
@@ -75,4 +75,4 @@ $spConfig = @{
     -PolicyIds $affectedPolicies `
     -Reason "Emergency rollback due to business impact"
 ```
-(Note: The script `rollback-policies.ps1` is a conceptual placeholder. Rollback should be performed by reverting to a previous policy definition in your version control system and re-deploying that version using `scripts/deployment/deploy.ps1` or by manually changing policy states in Azure AD portal in an emergency.)
+(Note: The script `rollback-policies.ps1` is a conceptual placeholder. Rollback should be performed by reverting to a previous policy definition in your version control system and re-deploying that version using `scripts/deployment/Invoke-PolicyDeployment.ps1` or by manually changing policy states in Azure AD portal in an emergency.)

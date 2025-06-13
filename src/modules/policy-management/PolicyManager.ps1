@@ -117,6 +117,29 @@ class ConditionalAccessPolicyManager {
         }
     }
 
+    [void]RemovePolicy([string]$policyId, [switch]$WhatIf) {
+        if ([string]::IsNullOrEmpty($policyId)) {
+            throw "Policy ID cannot be empty."
+        }
+
+        Write-Verbose "Attempting to remove policy with ID: '$policyId'."
+
+        if ($WhatIf) {
+            Write-Host "WhatIf: Would remove Conditional Access Policy with ID: '$policyId'."
+            return
+        }
+
+        try {
+            Remove-MgIdentityConditionalAccessPolicy -ConditionalAccessPolicyId $policyId -ErrorAction Stop
+            Write-Host "Successfully removed Conditional Access Policy with ID: '$policyId'."
+        }
+        catch {
+            $errorMessage = "Failed to remove policy with ID '$policyId'. Error: $($_.Exception.Message)"
+            Write-Error $errorMessage
+            throw # Re-throw the original exception to allow the caller to handle it
+        }
+    }
+
     hidden [void]ValidatePolicyDefinition([hashtable]$policy) {
         # Attempt to get DisplayName for more informative error messages
         $policyDisplayNameForError = "'Unnamed Policy'"
