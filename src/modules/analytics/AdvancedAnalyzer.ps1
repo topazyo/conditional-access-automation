@@ -172,7 +172,7 @@ class AdvancedPolicyAnalyzer {
         $excAppsB = $normalize.Invoke($appsB.ExcludeApplications)
         $actionsB = $normalize.Invoke($appsB.IncludeUserActions)
 
-        $isAAllApps = $incAppsA -contains 'All'
+        $isAAllApps = $incAppsA -contains 'All' # Corrected variable name
         $isBAllApps = $incAppsB -contains 'All'
         $desc = ""
 
@@ -326,19 +326,19 @@ class AdvancedPolicyAnalyzer {
             return "None"
         }
 
-        foreach ($p_block in $policies) {
-            if ($null -ne $p_block.GrantControls -and (@($p_block.GrantControls.BuiltInControls) -contains 'block')) {
-                return "Blocked (by '$($p_block.DisplayName)')"
+        foreach ($policyBlock in $policies) { # Renamed from p_block
+            if ($null -ne $policyBlock.GrantControls -and (@($policyBlock.GrantControls.BuiltInControls) -contains 'block')) {
+                return "Blocked (by '$($policyBlock.DisplayName)')"
             }
         }
 
         $allControls = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
         $operators = [System.Collections.Generic.List[string]]::new()
 
-        foreach ($p_grant in $policies) {
-            if ($null -ne $p_grant.GrantControls -and $null -ne $p_grant.GrantControls.BuiltInControls) {
-                $p_grant.GrantControls.BuiltInControls | ForEach-Object { $allControls.Add($_) }
-                if ($p_grant.GrantControls.Operator) {$operators.Add($p_grant.GrantControls.Operator)}
+        foreach ($policyGrant in $policies) { # Renamed from p_grant
+            if ($null -ne $policyGrant.GrantControls -and $null -ne $policyGrant.GrantControls.BuiltInControls) {
+                $policyGrant.GrantControls.BuiltInControls | ForEach-Object { $allControls.Add($_) }
+                if ($policyGrant.GrantControls.Operator) {$operators.Add($policyGrant.GrantControls.Operator)}
             }
         }
 
