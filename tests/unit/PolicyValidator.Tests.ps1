@@ -149,6 +149,147 @@ BeforeAll {
     }
 }
 
+Describe "PolicyValidator - Empty Grant Controls Rule" {
+    $validator = [PolicyValidator]::new()
+
+    Context "When a policy has no effective grant controls and is enabled" {
+        It "Should generate a WARNING if grantControls.Operator is 'OR' and builtInControls/customAuth/ToU are empty/null" {
+            $policy = @{
+                displayName = "Test Empty Grant OR"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @(); customAuthenticationFactors = $null; termsOfUse = @() }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -ContainMatch "Policy 'Test Empty Grant OR' is enabled to grant access if conditions are met, but specifies no concrete grant controls"
+        }
+
+        It "Should generate a WARNING if grantControls.Operator is 'AND' and builtInControls/customAuth/ToU are empty/null" {
+            $policy = @{
+                displayName = "Test Empty Grant AND"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "AND"; builtInControls = $null }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -ContainMatch "Policy 'Test Empty Grant AND' is enabled to grant access if conditions are met, but specifies no concrete grant controls"
+        }
+
+        It "Should generate a WARNING for 'enabledForReportingButNotEnforced' state as well" {
+            $policy = @{
+                displayName = "Test Empty Grant ReportOnly"
+                state = "enabledForReportingButNotEnforced"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @() }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -ContainMatch "Policy 'Test Empty Grant ReportOnly' is enabled to grant access if conditions are met, but specifies no concrete grant controls"
+        }
+    }
+
+    Context "When a policy should NOT trigger the Empty Grant Controls warning" {
+        It "Should NOT warn if policy is disabled" {
+            $policy = @{
+                displayName = "Test Disabled Empty Grant"
+                state = "disabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @() }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "specifies no concrete grant controls"
+        }
+
+        It "Should NOT warn if grantControls is null (implicit block)" {
+            $policy = @{
+                displayName = "Test Null GrantControls (Block)"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = $null
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "specifies no concrete grant controls"
+        }
+
+        It "Should NOT warn if grantControls.Operator is 'block'" {
+            $policy = @{
+                displayName = "Test Operator Block"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "block"; builtInControls = @() }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "specifies no concrete grant controls"
+        }
+
+        It "Should NOT warn if builtInControls has items (e.g., mfa)" {
+            $policy = @{
+                displayName = "Test With MFA"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @("mfa") }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "specifies no concrete grant controls"
+        }
+    }
+}
+
+Describe "PolicyValidator - Disable Resilience Defaults Rule" {
+    $validator = [PolicyValidator]::new()
+
+    Context "When sessionControls.disableResilienceDefaults is specified" {
+        It "Should generate a CRITICAL WARNING if disableResilienceDefaults is true" {
+            $policy = @{
+                displayName = "Test Disable Resilience True"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @("mfa") }
+                sessionControls = @{ disableResilienceDefaults = $true }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -ContainMatch "CRITICAL: Policy 'Test Disable Resilience True' has 'disableResilienceDefaults' set to true."
+        }
+
+        It "Should NOT warn if disableResilienceDefaults is false" {
+            $policy = @{
+                displayName = "Test Disable Resilience False"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @("mfa") }
+                sessionControls = @{ disableResilienceDefaults = $false }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "disableResilienceDefaults' set to true" # Check part of the message
+        }
+    }
+
+    Context "When sessionControls or disableResilienceDefaults property is missing" {
+        It "Should NOT warn if sessionControls object is null" {
+            $policy = @{
+                displayName = "Test Null SessionControls"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @("mfa") }
+                sessionControls = $null
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "disableResilienceDefaults' set to true"
+        }
+
+        It "Should NOT warn if disableResilienceDefaults property is missing from sessionControls" {
+            $policy = @{
+                displayName = "Test Missing DisableResilienceKey"
+                state = "enabled"
+                conditions = @{ users = @{ includeUsers = @("All") }; applications = @{ includeApplications = @("All") } }
+                grantControls = @{ Operator = "OR"; builtInControls = @("mfa") }
+                sessionControls = @{ signInFrequency = @{ value = 24; type = "hours" } }
+            }
+            $result = $validator.ValidatePolicy($policy)
+            $result.Warnings | Should -Not -ContainMatch "disableResilienceDefaults' set to true"
+        }
+    }
+}
+
 AfterAll {
     Remove-Variable -Name "NewMockPolicyDefinition" -Scope script -ErrorAction SilentlyContinue
 }
