@@ -340,7 +340,6 @@ function Find-RedundantPolicies([array]$policies) {
             $usersBInclude = ($policyB.Conditions.Users.IncludeUsers | Sort-Object) -join ',' # Renamed
             $usersAExclude = ($policyA.Conditions.Users.ExcludeUsers | Sort-Object) -join ',' # Renamed
             $usersBExclude = ($policyB.Conditions.Users.ExcludeUsers | Sort-Object) -join ',' # Renamed
-
             if (($usersAInclude -ne $usersBInclude) -or ($usersAExclude -ne $usersBExclude)) { # Updated variables
                 continue
             }
