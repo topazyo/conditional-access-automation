@@ -2,7 +2,7 @@
 # Test suite for src/modules/risk/risk_assessor.ps1
 
 BeforeAll {
-    Import-Module $PSScriptRoot/../../src/modules/risk/risk_assessor.ps1 -Force
+    Import-Module $PSScriptRoot/../../src/modules/risk/RiskAssessor.ps1 -Force
 
     # Helper to create mock policy objects (adapted from ComplianceManager.Tests.ps1)
     # Note: RiskAssessor's CalculatePolicyRisk has its own logic for interpreting these.

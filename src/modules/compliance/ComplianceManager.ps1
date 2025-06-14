@@ -306,22 +306,22 @@ class ComplianceManager {
 
         if ($null -ne $report.Controls) {
             foreach ($controlEntry in $report.Controls.GetEnumerator()) {
-                $controlID = $controlEntry.Name
+                $controlId = $controlEntry.Name # Changed from controlID to controlId
                 $controlData = $controlEntry.Value # This is the assessment for the control
 
                 # Get the control definition from the framework
                 $controlFrameworkDefinition = $null
-                if ($this.ComplianceFrameworks.ContainsKey($framework) -and $this.ComplianceFrameworks[$framework].ContainsKey($controlID)) {
-                    $controlFrameworkDefinition = $this.ComplianceFrameworks[$framework][$controlID]
+                if ($this.ComplianceFrameworks.ContainsKey($framework) -and $this.ComplianceFrameworks[$framework].ContainsKey($controlId)) {
+                    $controlFrameworkDefinition = $this.ComplianceFrameworks[$framework][$controlId]
                 } else {
-                    Write-Warning "Could not find framework definition for control ID '$controlID' in framework '$framework'."
+                    Write-Warning "Could not find framework definition for control ID '$controlId' in framework '$framework'."
                 }
 
                 $csvRow = [PSCustomObject]@{
                     Framework          = $framework
                     AssessmentDate     = $report.AssessmentDate.ToString("yyyy-MM-dd HH:mm:ss")
                     OverallScore       = [math]::Round($report.OverallScore, 2) # Ensure OverallScore is rounded
-                    ControlID          = $controlID
+                    ControlID          = $controlId # Changed from controlID to controlId
                     ControlDescription = if ($null -ne $controlFrameworkDefinition) { $controlFrameworkDefinition.Description } else { "N/A" }
                     Compliant          = $controlData.Compliant
                     Evidence           = $controlData.Evidence -join "; " # Join array into a semi-colon separated string
