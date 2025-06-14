@@ -1,0 +1,354 @@
+{
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json",
+  "version": "WB:1.0",
+  "isLocked": false,
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "{\"type\":\"@parameters\",\"content\":{\"version\":\"PARAMETERS_JSON_V1\",\"Parameters\":[{\"id\":\"timeRange\",\"type\":4,\"label\":\"Time Range\",\"value\":{\"durationMs\":2592000000},\"isRequired\":true}],\"style\":\"above\",\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"},\"transformers\":null}",
+        "conditionalVisibility": null,
+        "showPin": false
+      },
+      "customWidth": "100",
+      "name": "parameters-TimeRange"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "{\"type\":\"@text\",\"content\":{\"version\":\"TEXT_JSON_V1\",\"data\":\"## Policy Effectiveness Overview\"},\"transformers\":null}",
+        "conditionalVisibility": null,
+        "showPin": false
+      },
+      "customWidth": "100",
+      "name": "text - PolicyMetricsTitle"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SigninLogs\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| where ConditionalAccessStatus != \"notApplied\"\r\n| summarize \r\n    SumTotalAttempts = count(),\r\n    SumSuccessfulSignIns = countif(ResultType == 0),\r\n    SumFailedSignIns = countif(ResultType != 0),\r\n    SumUniqueUsers = dcount(UserPrincipalName),\r\n    SumMFAChallenges = countif(AuthenticationRequirement == \"multiFactorAuthentication\")\r\n| extend OverallSuccessRate = iff(SumTotalAttempts > 0, todouble(SumSuccessfulSignIns) * 100.0 / todouble(SumTotalAttempts), 0.0)",
+        "size": 0,
+        "title": "Overall Metrics (KPIs)",
+        "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "## Title",
+            "formatter": 1
+          },
+          "content": {
+            "columnMatch": "## Value",
+            "formatter": 12,
+            "numberFormat": {
+              "unit": 0,
+              "options": {
+                "style": "decimal",
+                "maximumFractionDigits": 2
+              }
+            }
+          },
+          "size": "full",
+          "tiles": [
+            {
+              "id": "07598668-78f3-45c3-ba2a-7619008e9c0c",
+              "title": "Total Unique Users",
+              "query": "{\"version\":\"KqlItem/1.0\",\"query\":\"| project Value=SumUniqueUsers, Title='Total Unique Users'\",\"size\":0,\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"}",
+              "visualization": "tile",
+              "metric": "Value",
+              "tileSettings": {
+                "titleContent": {"columnMatch":"Title"},
+                "content": {"columnMatch":"Value", "formatter":12, "numberFormat": {"unit":0, "options": {"style":"decimal"}}}
+              }
+            },
+            {
+              "id": "0c72a3d5-3807-4547-9816-88945942c859",
+              "title": "Total Sign-in Attempts",
+              "query": "{\"version\":\"KqlItem/1.0\",\"query\":\"| project Value=SumTotalAttempts, Title='Total Sign-in Attempts'\",\"size\":0,\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"}",
+              "visualization": "tile",
+              "metric": "Value",
+              "tileSettings": {
+                "titleContent": {"columnMatch":"Title"},
+                "content": {"columnMatch":"Value", "formatter":12, "numberFormat": {"unit":0, "options": {"style":"decimal"}}}
+              }
+            },
+            {
+              "id": "d6672733-4a3b-4008-a85e-9289f3c1202d",
+              "title": "Overall Success Rate (%)",
+              "query": "{\"version\":\"KqlItem/1.0\",\"query\":\"| project Value=OverallSuccessRate, Title='Overall Success Rate (%)'\",\"size\":0,\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"}",
+              "visualization": "tile",
+              "metric": "Value",
+              "tileSettings": {
+                "titleContent": {"columnMatch":"Title"},
+                "content": {"columnMatch":"Value", "formatter":12, "numberFormat": {"unit":1, "options": {"style":"decimal", "maximumFractionDigits":2}}}
+              }
+            },
+            {
+              "id": "dd75f888-5424-40ef-93a5-23785648a73a",
+              "title": "Total MFA Challenges",
+              "query": "{\"version\":\"KqlItem/1.0\",\"query\":\"| project Value=SumMFAChallenges, Title='Total MFA Challenges'\",\"size\":0,\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"}",
+              "visualization": "tile",
+              "metric": "Value",
+              "tileSettings": {
+                "titleContent": {"columnMatch":"Title"},
+                "content": {"columnMatch":"Value", "formatter":12, "numberFormat": {"unit":0, "options": {"style":"decimal"}}}
+              }
+            }
+          ]
+        },
+        "showPin": true,
+        "name": "query - PolicyMetricsKPIs"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SigninLogs\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| where ConditionalAccessStatus != \"notApplied\"\r\n| summarize\r\n    TotalAttempts = count(),\r\n    SuccessfulSignIns = countif(ResultType == 0),\r\n    FailedSignIns = countif(ResultType != 0),\r\n    UniqueUsers = dcount(UserPrincipalName),\r\n    MFAChallenges = countif(AuthenticationRequirement == \"multiFactorAuthentication\")\r\nby bin(TimeGenerated, 1d)\r\n| order by TimeGenerated asc",
+        "size": 1,
+        "title": "Sign-in Trends (Successful vs. Failed)",
+        "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            { "seriesName": "SuccessfulSignIns", "label": "Successful Sign-ins" },
+            { "seriesName": "FailedSignIns", "label": "Failed Sign-ins" }
+          ],
+          "xAxis": "TimeGenerated",
+          "yAxis": ["SuccessfulSignIns", "FailedSignIns"]
+        },
+        "showPin": true,
+        "name": "query - SignInTrendsChart"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SigninLogs\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| where ConditionalAccessStatus != \"notApplied\"\r\n| summarize\r\n    TotalAttempts = count(),\r\n    SuccessfulSignIns = countif(ResultType == 0),\r\n    FailedSignIns = countif(ResultType != 0),\r\n    UniqueUsers = dcount(UserPrincipalName),\r\n    MFAChallenges = countif(AuthenticationRequirement == \"multiFactorAuthentication\")\r\nby bin(TimeGenerated, 1d)\r\n| order by TimeGenerated asc",
+        "size": 1,
+        "title": "MFA Challenge Trend",
+        "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            { "seriesName": "MFAChallenges", "label": "MFA Challenges" }
+          ],
+          "xAxis": "TimeGenerated",
+          "yAxis": ["MFAChallenges"]
+        },
+        "showPin": true,
+        "name": "query - MFAChallengeTrendChart"
+      }
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "{\"type\":\"@text\",\"content\":{\"version\":\"TEXT_JSON_V1\",\"data\":\"## Policy Impact Analysis\"},\"transformers\":null}",
+        "conditionalVisibility": null,
+        "showPin": false
+      },
+      "customWidth": "100",
+      "name": "text - PolicyImpactTitle"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SigninLogs\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| where ConditionalAccessStatus != \"notApplied\"\r\n| extend ParsedAppliedPolicies = parse_json(ConditionalAccessPolicies)\r\n| mv-expand Policy = ParsedAppliedPolicies\r\n| extend PolicyName = tostring(Policy.displayName), PolicyId = tostring(Policy.id)\r\n| where isnotempty(PolicyName) \r\n| summarize\r\n    PolicyAppliedCount = count(), \r\n    BlockedAccessCount = countif(ResultType != 0),\r\n    RequiredMFACount = countif(AuthenticationRequirement == \"multiFactorAuthentication\")\r\nby PolicyName, PolicyId\r\n| order by PolicyAppliedCount desc",
+        "size": 2,
+        "title": "Policy Application Summary",
+        "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "grid",
+        "gridSettings": {
+          "formatters": [
+            { "columnMatch": "PolicyAppliedCount", "formatter": 5, "numberFormat": {"unit":0, "options":{"style":"decimal"}} },
+            { "columnMatch": "BlockedAccessCount", "formatter": 5, "numberFormat": {"unit":0, "options":{"style":"decimal"}} },
+            { "columnMatch": "RequiredMFACount", "formatter": 5, "numberFormat": {"unit":0, "options":{"style":"decimal"}} }
+          ],
+          "columnSettings": [
+            { "columnId": "PolicyName", "label": "Policy Name" },
+            { "columnId": "PolicyId", "label": "Policy ID" },
+            { "columnId": "PolicyAppliedCount", "label": "Applied Count" },
+            { "columnId": "BlockedAccessCount", "label": "Blocked Count" },
+            { "columnId": "RequiredMFACount", "label": "MFA Required Count" }
+          ]
+        },
+        "showPin": true,
+        "name": "query - PolicyImpactGrid"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SigninLogs\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| where ConditionalAccessStatus != \"notApplied\"\r\n| extend ParsedAppliedPolicies = parse_json(ConditionalAccessPolicies)\r\n| mv-expand Policy = ParsedAppliedPolicies\r\n| extend PolicyName = tostring(Policy.displayName), PolicyId = tostring(Policy.id)\r\n| where isnotempty(PolicyName) \r\n| summarize\r\n    PolicyAppliedCount = count(), \r\n    BlockedAccessCount = countif(ResultType != 0),\r\n    RequiredMFACount = countif(AuthenticationRequirement == \"multiFactorAuthentication\")\r\nby PolicyName, PolicyId\r\n| top 10 by BlockedAccessCount desc\r\n| project PolicyName, BlockedAccessCount",
+        "size": 1,
+        "title": "Top 10 Policies by Blocked Access",
+         "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "horizontalbar",
+        "chartSettings": {
+            "xAxis": "BlockedAccessCount",
+            "yAxis": "PolicyName",
+            "seriesLabelSettings": [
+                { "seriesName": "BlockedAccessCount", "label": "Blocked Count" }
+            ]
+        },
+        "showPin": true,
+        "name": "query - TopBlockedPoliciesChart"
+      }
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "{\"type\":\"@text\",\"content\":{\"version\":\"TEXT_JSON_V1\",\"data\":\"## Risk Analysis\"},\"transformers\":null}",
+        "conditionalVisibility": null,
+        "showPin": false
+      },
+      "customWidth": "100",
+      "name": "text - RiskAnalysisTitle"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AADRiskyUsers\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| join kind=inner (\r\n    SigninLogs\r\n    | where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n    | where ConditionalAccessStatus != \"notApplied\"\r\n) on $left.UserPrincipalName == $right.UserPrincipalName\r\n| summarize TotalRiskySignIns = count(), TotalBlockedRiskySignIns = countif(ResultType != 0)\r\n| extend PercentageBlocked = iff(TotalRiskySignIns > 0, todouble(TotalBlockedRiskySignIns) * 100.0 / TotalRiskySignIns, 0.0)",
+        "size": 0,
+        "title": "Risky Sign-in KPIs",
+        "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": { "columnMatch": "## Title", "formatter": 1 },
+          "content": { "columnMatch": "## Value", "formatter": 12, "numberFormat": { "unit": 0, "options": { "style": "decimal", "maximumFractionDigits": 2 }}},
+          "size": "full",
+          "tiles": [
+            {
+              "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef-risk1",
+              "title": "Total Risky Sign-ins",
+              "query": "{\"version\":\"KqlItem/1.0\",\"query\":\"| project Value=TotalRiskySignIns, Title='Total Risky Sign-ins'\",\"size\":0,\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"}",
+              "visualization": "tile",
+              "metric": "Value",
+              "tileSettings": { "titleContent": {"columnMatch":"Title"}, "content": {"columnMatch":"Value", "formatter":12, "numberFormat": {"unit":0, "options": {"style":"decimal"}}}}
+            },
+            {
+              "id": "b2c3d4e5-f6a7-8901-2345-67890abcdeff-risk2",
+              "title": "% Risky Sign-ins Blocked",
+              "query": "{\"version\":\"KqlItem/1.0\",\"query\":\"| project Value=PercentageBlocked, Title='% Risky Sign-ins Blocked'\",\"size\":0,\"queryType\":0,\"resourceType\":\"microsoft.operationalinsights/workspaces\"}",
+              "visualization": "tile",
+              "metric": "Value",
+              "tileSettings": { "titleContent": {"columnMatch":"Title"}, "content": {"columnMatch":"Value", "formatter":12, "numberFormat": {"unit":1, "options": {"style":"decimal", "maximumFractionDigits":2}}}}
+            }
+          ]
+        },
+        "showPin": true,
+        "name": "query - RiskKPIs"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AADRiskyUsers\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| join kind=inner (\r\n    SigninLogs\r\n    | where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n    | where ConditionalAccessStatus != \"notApplied\"\r\n) on $left.UserPrincipalName == $right.UserPrincipalName\r\n| summarize\r\n    RiskySignIns = count(),\r\n    BlockedRiskySignIns = countif(ResultType != 0)\r\nby RiskLevel, Day=bin(TimeGenerated, 1d)\r\n| order by Day asc, RiskLevel asc",
+        "size": 2,
+        "title": "Risky Sign-in Trends by Risk Level",
+        "timeContext": { "durationMs": 0, "fromParameter": "TimeRange", "isInitialTime": false },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart",
+        "chartSettings": {
+          "xAxis": "Day",
+          "yAxis": "RiskySignIns",
+          "seriesLabelSettings": [
+            { "seriesName": "Low", "label": "Low Risk" },
+            { "seriesName": "Medium", "label": "Medium Risk" },
+            { "seriesName": "High", "label": "High Risk" }
+          ],
+          "splitBy": "RiskLevel",
+          "aggregation": "sum"
+        },
+        "showPin": true,
+        "name": "query - RiskySignInTrends"
+      }
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "{\"type\":\"@text\",\"content\":{\"version\":\"TEXT_JSON_V1\",\"data\":\"## Generated Alerts\"},\"transformers\":null}",
+        "conditionalVisibility": null,
+        "showPin": false
+      },
+      "customWidth": "100",
+      "name": "text - AlertsTitle"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let FailureRateThreshold = 0.1; // 10%\r\nSigninLogs\r\n| where TimeGenerated > {TimeRange:start} and TimeGenerated < {TimeRange:end}\r\n| where ConditionalAccessStatus != \"notApplied\"\r\n| summarize TotalAttempts = count(), FailedSignIns = countif(ResultType != 0) by AlertTime=bin(TimeGenerated, 1d) // Daily summary\r\n| extend FailureRate = todouble(FailedSignIns) * 100.0 / todouble(TotalAttempts)\r\n| where TotalAttempts > 0 and FailureRate > (FailureRateThreshold * 100.0) // Compare percentages\r\n| project\r\n    AlertTime,\r\n    AlertType = \"High Sign-in Failure Rate\",\r\n    Details = strcat(\"Daily sign-in failure rate of \", round(FailureRate, 2), \"% exceeded the threshold of \", FailureRateThreshold * 100, \"%.\"),\r\n    ActualRate = round(FailureRate, 2),\r\n    ThresholdValue = FailureRateThreshold * 100.0\r\n| order by AlertTime desc",
+        "size": 3,
+        "title": "High Sign-in Failure Rate Alerts",
+        "timeContext": {
+          "durationMs": 0,
+          "fromParameter": "TimeRange",
+          "isInitialTime": false
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "grid",
+        "gridSettings": {
+          "formatters": [
+            { "columnMatch": "AlertTime", "formatter": 8, "formatOptions": { "dateFormat": "YYYY-MM-DD HH:mm:ss" } },
+            { "columnMatch": "ActualRate", "formatter": 5, "numberFormat": { "unit": 1, "options": { "style": "decimal", "maximumFractionDigits": 2 } }, "thresholds": [{ "operator": ">", "thresholdValue": "10", "representation": "warning" }, { "operator": ">", "thresholdValue": "20", "representation": "error" }] },
+            { "columnMatch": "ThresholdValue", "formatter": 5, "numberFormat": { "unit": 1, "options": { "style": "decimal", "maximumFractionDigits": 2 } } }
+          ],
+          "columnSettings": [
+            { "columnId": "AlertTime", "label": "Alert Time" },
+            { "columnId": "AlertType", "label": "Alert Type" },
+            { "columnId": "Details", "label": "Details" },
+            { "columnId": "ActualRate", "label": "Actual Rate (%)" },
+            { "columnId": "ThresholdValue", "label": "Threshold (%)" }
+          ]
+        },
+        "showPin": true,
+        "name": "query - HighFailureRateAlertsGrid"
+      }
+    }
+  ],
+  "author": "CAAutomationFramework"
+}

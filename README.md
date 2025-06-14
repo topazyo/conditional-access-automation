@@ -104,6 +104,42 @@ $riskReportData | ConvertTo-Json -Depth 5 | Out-File -Path $riskReportPath
 Write-Host "Risk assessment report (JSON) generated at $riskReportPath"
 ```
 
+## 📊 Conditional Access Insights Workbook
+
+An Azure Monitor Workbook template is available to provide rich visualizations and insights into your Conditional Access policy environment. This workbook helps you understand policy effectiveness, impact on sign-ins, user and sign-in risk, and generated alerts based on policy behavior.
+
+**Location of Template:**
+The workbook JSON template can be found in the repository at:
+`src/modules/reporting/dashboards/policy-monitoring-workbook.json`
+
+**Key Sections & Insights:**
+The workbook is structured to provide insights into several key areas:
+-   **Policy Effectiveness Overview:** KPIs and trends related to overall sign-in success, failures, and MFA challenges.
+-   **Policy Impact Analysis:** Detailed breakdown of how individual policies are applied, including counts of applied policies, blocked access, and MFA requirements per policy.
+-   **Risk Analysis:** Visualization of risky sign-ins (based on `AADRiskyUsers` and `SigninLogs`), including trends by risk level and the percentage of risky sign-ins that were blocked.
+-   **Generated Alerts:** A table of potential alerts based on configurable KQL queries, such as high sign-in failure rates.
+
+**Prerequisites for Data:**
+For the workbook to populate correctly, you must have the following Azure AD data sources configured to send data to the Log Analytics Workspace that the workbook will be pointed to:
+-   **`SigninLogs`**: Essential for most policy effectiveness, impact, and MFA challenge metrics.
+-   **`AADRiskyUsers`**: Required for the Risk Analysis section to show data related to user risk events.
+    (Note: Ensure Identity Protection is enabled and configured to populate this table.)
+
+**Deployment Instructions:**
+To deploy and use this workbook in your Azure environment:
+1.  Navigate to your **Azure portal**.
+2.  Go to **Azure Monitor** > **Workbooks**.
+3.  Click **+ Create** or select **Empty** to start a new workbook.
+4.  Click the **Advanced Editor** button (it usually has an icon like `</>`).
+5.  Open the `src/modules/reporting/dashboards/policy-monitoring-workbook.json` file from this repository.
+6.  Copy the **entire JSON content** from this file.
+7.  Paste the copied JSON into the Advanced Editor in Azure Monitor Workbooks, replacing any existing content.
+8.  Click **Apply**.
+9.  The workbook should load. You will likely need to select the appropriate **Subscription**, **Resource Group**, and **Log Analytics Workspace** that contains your Azure AD diagnostic data (`SigninLogs`, `AADRiskyUsers`). These are often configured at the top of the workbook or when it first loads if no defaults are set.
+10. **Save** the workbook. Give it a descriptive name like "Conditional Access Insights Dashboard" or "Policy Monitoring Workbook". Choose a region and resource group to save the workbook resource itself.
+
+Once saved, you can access and share this workbook with relevant stakeholders. Remember to periodically check for updates to the template in this repository.
+
 ## 📊 Sample Dashboard
 
 **Dashboard Status:** Azure Monitor Workbook KQL queries are available in `src/modules/reporting/dashboards/policy-monitoring.kql`. The full visual dashboard/GUI is a planned feature (see `docs/ROADMAP.md`).
