@@ -2,7 +2,7 @@
 # Test suite for src/modules/policy-management/policy_manager.ps1
 
 BeforeAll {
-    Import-Module $PSScriptRoot/../../src/modules/policy-management/policy_manager.ps1 -Force
+    Import-Module $PSScriptRoot/../../src/modules/policy-management/PolicyManager.ps1 -Force
 
     # Global Mocks
     Mock Connect-MgGraph { Write-Verbose "Mocked Connect-MgGraph"; return $true } -ModuleName *

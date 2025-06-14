@@ -50,7 +50,7 @@ class PolicyMonitor {
         # $this.LogAnalyticsEnabled = $true
     }
 
-    [hashtable]GenerateMetricsReport([datetime]$startDate, [datetime]$endDate) {
+    [hashtable]GenerateMetricsReport([datetime]$startDate, [datetime]$endDate, [switch]$SendToLogAnalytics) { # Added SendToLogAnalytics switch
         Write-Verbose "Generating metrics report from $($startDate.ToString('o')) to $($endDate.ToString('o'))"
         $report = @{
             TimeRange = @{
@@ -143,6 +143,51 @@ class PolicyMonitor {
             $report.Recommendations = $this.GenerateRecommendations($report.PolicyMetrics)
         } else {
              Write-Warning "No sign-in logs processed, skipping recommendations generation."
+        }
+
+        if ($SendToLogAnalytics.IsPresent) {
+            Write-Verbose "Attempting to send summary metrics to Log Analytics."
+            # Construct the payload
+            $logAnalyticsPayload = @{
+                EventTime_t = (Get-Date).ToUniversalTime().ToString("o")
+                TenantId_g = $this.TenantId # Assuming $this.TenantId is available, if not, needs to be passed or accessed differently
+                TotalPolicies_d = $report.PolicyMetrics.TotalPolicies
+                ActivePolicies_d = $report.PolicyMetrics.ActivePolicies
+                UniqueBlockedUserCount_d = $report.UserImpact.BlockedUsers
+                ReportTimeRangeStart_t = $startDate.ToUniversalTime().ToString("o")
+                ReportTimeRangeEnd_t = $endDate.ToUniversalTime().ToString("o")
+                Recommendations_s = ($report.Recommendations | ConvertTo-Json -Compress)
+                SourceScript_s = "PolicyMonitor.ps1/GenerateMetricsReport"
+            }
+
+            # Access TenantId from GraphConnection if not a direct property of PolicyMonitor
+            # This assumes Connect-MgGraph populates a TenantId property or similar in $this.GraphConnection
+            # A more robust way would be to ensure $this.TenantId is explicitly set in the constructor if needed here.
+            # For now, let's assume $this.GraphConnection.TenantId might exist, or we need to adjust.
+            # If PolicyMonitor class doesn't have a TenantId, we need to get it.
+            # Let's try to get it from the Graph connection context if available.
+            if ($null -eq $logAnalyticsPayload.TenantId_g -and $null -ne $this.GraphConnection) {
+                try {
+                    # This is an assumption about how TenantId might be stored or retrieved post-connection.
+                    # The actual property name might differ based on Connect-MgGraph's output or internal storage.
+                    $graphContext = Get-MgContext -ErrorAction SilentlyContinue
+                    if ($null -ne $graphContext -and $null -ne $graphContext.TenantId) {
+                        $logAnalyticsPayload.TenantId_g = $graphContext.TenantId
+                        Write-Verbose "Retrieved TenantId from Get-MgContext for Log Analytics payload."
+                    } else {
+                        Write-Warning "Could not determine TenantId for Log Analytics payload from Get-MgContext."
+                    }
+                } catch {
+                     Write-Warning "Error retrieving TenantId via Get-MgContext for Log Analytics: $($_.Exception.Message)"
+                }
+            }
+             if ($null -eq $logAnalyticsPayload.TenantId_g) {
+                Write-Warning "TenantId_g could not be determined for Log Analytics payload. It will be missing from the log entry."
+            }
+
+
+            $this.SendToLogAnalytics("PolicySummaryMetrics", $logAnalyticsPayload)
+            Write-Verbose "Summary metrics sent to Log Analytics table PolicySummaryMetrics_CL."
         }
 
         return $report

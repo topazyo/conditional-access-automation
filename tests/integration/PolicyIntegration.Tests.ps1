@@ -7,7 +7,7 @@ param (
 
 BeforeAll {
     # Import required modules
-    Import-Module $PSScriptRoot/../../src/modules/policy-management/policy_manager.ps1 -Force
+    Import-Module $PSScriptRoot/../../src/modules/policy-management/PolicyManager.ps1 -Force
     # Compliance and RiskAssessor modules are not directly used by PolicyManager integration tests here.
     # Import-Module $PSScriptRoot/../../src/modules/compliance/compliance_manager.ps1 -Force
     # Import-Module $PSScriptRoot/../../src/modules/risk/risk_assessor.ps1 -Force
