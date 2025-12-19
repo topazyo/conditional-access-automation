@@ -34,3 +34,8 @@ coverage/
 # Build outputs
 dist/
 build/
+
+# Local audit/agent guidance - keep out of repo
+VIBE_AUDIT_ROADMAP.md
+AGENTS.md
+.github/copilot-instructions.md

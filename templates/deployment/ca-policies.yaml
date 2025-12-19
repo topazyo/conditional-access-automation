@@ -1,5 +1,5 @@
 policies:
-  - displayName: "Base Security Policy"
+  - name: "Base Security Policy"
     state: "enabled"
     conditions:
       users:
@@ -15,7 +15,7 @@ policies:
       operator: "AND"
       builtInControls: ["mfa"]
 
-  - displayName: "High-Risk User Policy"
+  - name: "High-Risk User Policy"
     state: "enabled"
     conditions:
       users:
@@ -27,7 +27,7 @@ policies:
       operator: "AND"
       builtInControls: ["mfa", "passwordChange"]
 
-  - displayName: "Guest Access Policy"
+  - name: "Guest Access Policy"
     state: "enabled"
     conditions:
       users:
