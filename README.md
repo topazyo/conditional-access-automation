@@ -1,6 +1,6 @@
 # Azure Conditional Access Automation Framework
 
-![Build Status](https://github.com/yourusername/ca-automation/workflows/CA%20Policy%20Deployment/badge.svg)
+![Build Status](https://github.com/topazyo/conditional-access-automation/workflows/CA%20Policy%20Deployment/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2+-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![Azure](https://img.shields.io/badge/Azure-Entra%20ID-0089D6.svg)](https://azure.microsoft.com/services/active-directory/)
@@ -10,17 +10,17 @@ Enterprise-grade automation framework for managing Azure/Entra ID Conditional Ac
 ## 🚀 Features
 
 - **Policy Lifecycle Management**
-  - Automated policy deployment and updates
-  - Conflict detection and resolution
+  - Automated policy deployment and updates via [ConditionalAccessPolicyManager](src/modules/policy-management/policy_manager.ps1)
+  - Conflict detection and resolution using [PolicyValidator](src/modules/validation/policy_validator.ps1)
   - Version control and rollback capabilities
 
 - **Compliance & Risk Management**
-  - Built-in compliance frameworks (ISO 27001, NIST 800-53, GDPR)
-  - Real-time risk assessment
+  - Built-in compliance frameworks (ISO 27001, NIST 800-53, GDPR) via [ComplianceManager](src/modules/compliance/compliance_manager.ps1)
+  - Real-time risk assessment with [RiskAssessor](src/modules/risk/risk_assessor.ps1)
   - Automated compliance reporting
 
 - **Monitoring & Reporting**
-  - Advanced policy effectiveness metrics
+  - Advanced policy effectiveness metrics via [PolicyMonitor](src/modules/reporting/policy_monitor.ps1)
   - User impact analysis
   - Custom Azure Monitor workbooks
 
@@ -43,13 +43,13 @@ Enterprise-grade automation framework for managing Azure/Entra ID Conditional Ac
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ca-automation.git
-cd ca-automation
+git clone https://github.com/topazyo/conditional-access-automation.git
+cd conditional-access-automation
 ```
 
 2. Install required PowerShell modules:
 ```powershell
-./scripts/setup/install-dependencies.ps1
+Install-Module Microsoft.Graph -Scope CurrentUser
 ```
 
 3. Configure your environment:
@@ -62,7 +62,7 @@ Copy-Item .env.example .env
 
 1. **Basic Policy Deployment**
 ```powershell
-Import-Module ./src/modules/policy-management/policy_manager.ps1
+Import-Module [`src/modules/policy-management/policy_manager.ps1`](src/modules/policy-management/policy_manager.ps1 )
 
 $policyManager = [ConditionalAccessPolicyManager]::new($TenantId)
 $policyManager.DeployPolicy("./templates/policies/baseline.yaml")
@@ -82,62 +82,39 @@ $riskReport = $riskAssessor.AnalyzePolicies()
 $riskReport.ExportFindings("./reports/risk-assessment.xlsx")
 ```
 
-## 📊 Sample Dashboard
+## ⚙️ Configuration
 
-![Dashboard Screenshot](docs/images/dashboard-preview.png)
+| Variable | Required | Default | Description | Where Used |
+|----------|----------|---------|-------------|------------|
+| TENANT_ID | Yes | - | Azure tenant ID | .github/workflows/ca-policy-deployment.yml |
+| CLIENT_ID | Yes | - | Azure app client ID | .github/workflows/ca-policy-deployment.yml |
+| CLIENT_SECRET | Yes | - | Azure app client secret | .github/workflows/ca-policy-deployment.yml |
 
-The built-in monitoring dashboard provides real-time visibility into:
-- Policy effectiveness metrics
-- User impact analysis
-- Compliance status
-- Risk indicators
+## 📖 Usage
 
-## 🏗️ Architecture
+- Deploy policies: `./scripts/deployment/deploy.ps1 -TenantId $TenantId -ConfigPath ./templates/deployment/ca-policies.yaml`
+- Run tests: `Invoke-Pester ./tests -CI`
+- Cleanup policies: `./scripts/maintenance/policy-cleanup.ps1 -TenantId $TenantId`
 
-```mermaid
-graph TD
-    A[Policy Management] -->|Deploys| B[Azure/Entra ID]
-    C[Compliance Engine] -->|Monitors| B
-    D[Risk Assessment] -->|Analyzes| B
-    E[Monitoring] -->|Collects| B
-    F[Reporting] -->|Generates| G[Insights]
-    H[Automation] -->|Orchestrates| A
-```
+## 📁 Project Layout
 
-## 🔒 Security Considerations
+- `src/modules/`: Core PowerShell classes (policy management, compliance, risk, validation, reporting)
+- `templates/`: YAML/JSON configs for policies, reports, deployments
+- `tests/`: Unit and integration tests
+- `scripts/`: Deployment, maintenance, and setup scripts
+- `docs/`: Architecture, deployment, and operations guides
 
-- All deployments require approved pull requests
-- Changes are validated against security baselines
-- Automated conflict detection prevents policy overlap
-- Just-In-Time access for privileged operations
-- Comprehensive audit logging
+## 🔄 CI/CD
 
-## 📖 Documentation
-
-Detailed documentation is available in the [docs](./docs) directory:
-- [Architecture Overview](docs/architecture/README.md)
-- [Deployment Guide](docs/deployment/README.md)
-- [Operation Manual](docs/operations/README.md)
-- [Security Considerations](docs/security/README.md)
-
-## 🧪 Testing
-
-Run the test suite:
-```powershell
-Invoke-Pester ./tests -CI
-```
-
-Coverage report will be generated in `./coverage/report.html`
+Automated via [.github/workflows/ca-policy-deployment.yml](.github/workflows/ca-policy-deployment.yml): validates policies, runs tests, deploys to staging/production.
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+## 🔒 Security
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## 📜 License
 
@@ -162,11 +139,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - For bugs and features, open an issue
 - For security issues, see [SECURITY.md](SECURITY.md)
-- For questions, join our [Discussions](https://github.com/topazyo/ca-automation/discussions)
-
-## 🗺️ Roadmap
-
-See our [project roadmap](docs/ROADMAP.md) for planned features and enhancements.
+- For questions, join our [Discussions](https://github.com/topazyo/conditional-access-automation/discussions)
 
 ---
 
