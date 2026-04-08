@@ -1,38 +1,29 @@
 # Conditional Access Incident Response Playbook
 
+This playbook contains guidance for common Conditional Access incidents and points to repository maintenance scripts where available.
+
 ## High-Priority Incidents
 
 ### 1. VIP Access Blocked
-```powershell
-# Quick VIP access resolution
-$vipConfig = @{
-    UserPrincipalName = "executive@company.com"
-    TemporaryExclusion = $true
-    Duration = "2hours"
-    Reason = "Emergency access required for board meeting"
-}
 
-./scripts/maintenance/grant-emergency-access.ps1 @vipConfig
+There is no `grant-emergency-access.ps1` script in the repository. Use `ConditionalAccessPolicyManager` to create a temporary exclusion or modify the policy interactively.
+
+Example (interactive):
+
+```powershell
+Import-Module ./src/modules/policy-management/policy_manager.ps1
+$mgr = [ConditionalAccessPolicyManager]::new('<tenant-id>')
+# Use $mgr methods to apply a temporary exclusion (see source for exact API)
 ```
+
+TODO: add maintenance helper script `scripts/maintenance/grant-emergency-access.ps1` for common emergency workflows.
 
 ### 2. Mass Sign-In Failures
-```powershell
-# Identify impacted policies
-$impactAnalysis = ./scripts/operations/analyze-signin-failures.ps1 `
-    -TimeWindow "1hour" `
-    -ThresholdPercentage 20
 
-# Apply temporary mitigation
-if ($impactAnalysis.RequiresAction) {
-    ./scripts/maintenance/apply-emergency-exclusion.ps1 `
-        -PolicyId $impactAnalysis.ProblemPolicy `
-        -Duration "1hour"
-}
-```
+The repository does not include `scripts/operations/analyze-signin-failures.ps1`. Use your SigninLogs in Log Analytics or Azure Monitor to analyze failures and then use `scripts/maintenance/policy-cleanup.ps1` or the policy manager class to apply mitigations.
 
-## Monitoring and Alerting
+Example KQL and mitigation workflow:
 
-### KQL Queries for Common Scenarios
 ```kusto
 // High failure rate detection
 SigninLogs
@@ -40,11 +31,14 @@ SigninLogs
 | where ResultType != 0
 | summarize FailureCount=count() by PolicyName=ConditionalAccessPolicies
 | where FailureCount > 100
-
-// Suspicious policy modifications
-AuditLogs
-| where OperationType == "Update"
-| where Category == "Policy"
-| project TimeGenerated, Actor=InitiatedBy.user.userPrincipalName, 
-    PolicyName=TargetResources[0].displayName
 ```
+
+Mitigation example (interactive):
+
+```powershell
+# Inspect policy and decide on mitigation
+Import-Module ./scripts/maintenance/policy-cleanup.ps1
+./scripts/maintenance/policy-cleanup.ps1 -WhatIf
+```
+
+TODO: provide `scripts/operations/analyze-signin-failures.ps1` and scripted mitigation helpers.

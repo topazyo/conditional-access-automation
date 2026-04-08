@@ -31,13 +31,21 @@ jobs:
       - name: Run Policy Validation
         shell: pwsh
         run: |
-          Import-Module ./src/modules/policy-management/policy_manager.ps1
-          $policies = Get-Content ./templates/deployment/ca-policies.yaml | ConvertFrom-Yaml
-          $validator = [PolicyValidator]::new($env:TENANT_ID)
-          $validation = $validator.ValidatePolicies($policies)
-          
-          if ($validation.HasErrors) {
-            throw "Policy validation failed: $($validation.Errors -join '; ')"
+          # Import the validator class and validate each policy entry from the template
+          Import-Module ./src/modules/validation/policy_validator.ps1
+          $policiesObj = Get-Content ./templates/deployment/ca-policies.yaml | ConvertFrom-Yaml
+          $validator = [PolicyValidator]::new()
+
+          $allErrors = @()
+          foreach ($policy in $policiesObj.policies) {
+            $validation = $validator.ValidatePolicy($policy)
+            if (-not $validation.IsValid) {
+              $allErrors += $validation.Errors
+            }
+          }
+
+          if ($allErrors.Count -gt 0) {
+            throw "Policy validation failed: $($allErrors -join '; ')"
           }
 
   test:

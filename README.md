@@ -14,109 +14,130 @@ Enterprise-grade automation framework for managing Azure/Entra ID Conditional Ac
   - Conflict detection and resolution using [PolicyValidator](src/modules/validation/policy_validator.ps1)
   - Version control and rollback capabilities
 
-- **Compliance & Risk Management**
-  - Built-in compliance frameworks (ISO 27001, NIST 800-53, GDPR) via [ComplianceManager](src/modules/compliance/compliance_manager.ps1)
-  - Real-time risk assessment with [RiskAssessor](src/modules/risk/risk_assessor.ps1)
-  - Automated compliance reporting
+# Azure Conditional Access Automation Framework
 
-- **Monitoring & Reporting**
-  - Advanced policy effectiveness metrics via [PolicyMonitor](src/modules/reporting/policy_monitor.ps1)
-  - User impact analysis
-  - Custom Azure Monitor workbooks
+Lightweight PowerShell framework to define, validate, deploy, and monitor Azure/Entra ID Conditional Access (CA) policies.
 
-- **Security & Governance**
-  - Just-In-Time privileged access
-  - Comprehensive audit logging
-  - Role-based access control
+This repository contains PowerShell modules and scripts intended for teams that manage Conditional Access at scale and want automated validation, risk scoring, and deployment tooling that can run in CI or locally.
 
-## 📋 Prerequisites
+## What This Repo Contains (verified)
+- Policy lifecycle management: `src/modules/policy-management/policy_manager.ps1` (ConditionalAccessPolicyManager class)
+- Policy validation: `src/modules/validation/policy_validator.ps1`
+- Compliance checks: `src/modules/compliance/compliance_manager.ps1`
+- Risk scoring: `src/modules/risk/risk_assessor.ps1`
+- Monitoring/reporting hooks: `src/modules/reporting/policy_monitor.ps1`
+- Deployment scripts and templates: `scripts/deployment/deploy.ps1`, `templates/deployment/ca-policies.yaml`
+- Tests: unit and integration tests under `tests/` (Pester)
 
-- PowerShell 7.2 or higher
-- Azure/Entra ID Premium P2 license
-- Required Azure AD permissions:
-  - Policy.ReadWrite.ConditionalAccess
-  - Policy.Read.All
-  - Directory.Read.All
-  - AuditLog.Read.All
+## Quickstart (minutes)
+1. Install prerequisites (PowerShell 7.2+ recommended) and modules:
 
-## 🛠️ Installation
+```powershell
+Install-Module Microsoft.Graph -Scope CurrentUser -Force
+Install-Module Pester -Scope CurrentUser -Force
+```
 
-1. Clone the repository:
+2. Clone and open the repo in VS Code:
+
 ```bash
 git clone https://github.com/topazyo/conditional-access-automation.git
 cd conditional-access-automation
+code .
 ```
 
-2. Install required PowerShell modules:
+3. Run unit tests:
+
 ```powershell
-Install-Module Microsoft.Graph -Scope CurrentUser
+Invoke-Pester ./tests -CI
 ```
 
-3. Configure your environment:
+4. (Optional) Deploy example policies to an Azure/Entra tenant. The example deployment script consumes `templates/deployment/ca-policies.yaml`:
+
 ```powershell
-Copy-Item .env.example .env
-# Edit .env with your environment settings
+# Replace <TENANT_ID> and set appropriate credentials or run interactive login
+./scripts/deployment/deploy.ps1 -TenantId <TENANT_ID> -ConfigPath ./templates/deployment/ca-policies.yaml
 ```
 
-## 🚦 Quick Start
+Notes:
+- The deployment scripts use Microsoft Graph cmdlets when available. If Graph cmdlets are not installed, scripts include offline/test fallbacks for local development and CI mocks.
 
-1. **Basic Policy Deployment**
+## Prerequisites
+- PowerShell 7.2 or higher
+- Microsoft.Graph PowerShell module (for real deployments)
+- Pester (for running tests)
+- An Azure/Entra tenant and appropriate service principal or user credentials for deployments
+
+## Configuration
+
+Environment variables used by scripts (confirm in your environment):
+
+- `TENANT_ID` (or `-TenantId` parameter): required for real deployments
+- `CLIENT_ID`, `CLIENT_SECRET` (CI/service principal secrets — do NOT commit)
+- `LOG_ANALYTICS_WORKSPACE_ID` (optional) — referenced by monitoring modules
+
+If you add secrets to your CI, use your platform's secrets store — do not commit credentials.
+
+TODO: Verify exact env var names required by CI workflows and list them here. See `.github/workflows/ca-policy-deployment.yml` for current usage.
+
+## Usage (developer-focused)
+
+- Inspect and import modules in PowerShell for interactive development. Example:
+
 ```powershell
-Import-Module [`src/modules/policy-management/policy_manager.ps1`](src/modules/policy-management/policy_manager.ps1 )
-
-$policyManager = [ConditionalAccessPolicyManager]::new($TenantId)
-$policyManager.DeployPolicy("./templates/policies/baseline.yaml")
+Import-Module ./src/modules/policy-management/policy_manager.ps1
+$mgr = [ConditionalAccessPolicyManager]::new('<tenant-id>')
+# $mgr methods: DeployPolicy, RemovePolicy, EvaluateAccess (see source for exact method names)
 ```
 
-2. **Compliance Assessment**
+- Validate individual policy objects using the validator module:
+
 ```powershell
-$complianceManager = [ComplianceManager]::new($TenantId)
-$report = $complianceManager.AssessCompliance("ISO27001")
-$report.GenerateReport("./reports/compliance-$(Get-Date -Format 'yyyyMMdd').pdf")
+Import-Module ./src/modules/validation/policy_validator.ps1
+# Call the exported validation functions (see file for function names)
 ```
 
-3. **Risk Analysis**
-```powershell
-$riskAssessor = [RiskAssessor]::new()
-$riskReport = $riskAssessor.AnalyzePolicies()
-$riskReport.ExportFindings("./reports/risk-assessment.xlsx")
-```
+- Use `scripts/deployment/deploy.ps1` for end-to-end deployments using YAML templates.
 
-## ⚙️ Configuration
+## Project Layout
 
-| Variable | Required | Default | Description | Where Used |
-|----------|----------|---------|-------------|------------|
-| TENANT_ID | Yes | - | Azure tenant ID | .github/workflows/ca-policy-deployment.yml |
-| CLIENT_ID | Yes | - | Azure app client ID | .github/workflows/ca-policy-deployment.yml |
-| CLIENT_SECRET | Yes | - | Azure app client secret | .github/workflows/ca-policy-deployment.yml |
+- `src/modules/` — core PowerShell modules
+  - `policy-management/policy_manager.ps1` — main policy manager class
+  - `validation/policy_validator.ps1` — validation utilities
+  - `compliance/compliance_manager.ps1` — compliance checks
+  - `risk/risk_assessor.ps1` — risk scoring functions
+  - `reporting/policy_monitor.ps1` — monitoring and Log Analytics hooks
+- `scripts/` — operational scripts (deployment, maintenance)
+- `templates/` — example configuration and YAML templates for deployment
+- `tests/` — Pester unit and integration tests
 
-## 📖 Usage
+## CI / Workflows
 
-- Deploy policies: `./scripts/deployment/deploy.ps1 -TenantId $TenantId -ConfigPath ./templates/deployment/ca-policies.yaml`
-- Run tests: `Invoke-Pester ./tests -CI`
-- Cleanup policies: `./scripts/maintenance/policy-cleanup.ps1 -TenantId $TenantId`
+This repository contains a GitHub Actions workflow: `.github/workflows/ca-policy-deployment.yml`.
 
-## 📁 Project Layout
+Important: the workflow's `validate` job references `PolicyValidator` usage that may not match the current `policy_validator.ps1` API. See TODOs below.
 
-- `src/modules/`: Core PowerShell classes (policy management, compliance, risk, validation, reporting)
-- `templates/`: YAML/JSON configs for policies, reports, deployments
-- `tests/`: Unit and integration tests
-- `scripts/`: Deployment, maintenance, and setup scripts
-- `docs/`: Architecture, deployment, and operations guides
+## Troubleshooting
 
-## 🔄 CI/CD
+- If Microsoft.Graph cmdlets are missing, install the module or run tests which use offline fallbacks.
+- If CI validation fails, compare the workflow's expected method names with the functions in `src/modules/validation/policy_validator.ps1`.
+- `PolicyMonitor.ConfigureLogAnalytics` is currently a placeholder — confirm send behavior before using in production.
 
-Automated via [.github/workflows/ca-policy-deployment.yml](.github/workflows/ca-policy-deployment.yml): validates policies, runs tests, deploys to staging/production.
+## Contributing
 
-## 🤝 Contributing
+Please read `CONTRIBUTING.md` for contributor guidelines. Keep changes small and add/update Pester tests for behavior changes.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+## Security
 
-## 🔒 Security
+Report security issues via the process described in `SECURITY.md`.
 
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+## License
 
-## 📜 License
+MIT — see `LICENSE` for details.
+
+## Changes made
+- Rewrote README to be quickstart-first and aligned with current modules and scripts.
+- Added TODOs for CI/workflow and env var verification.
+
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

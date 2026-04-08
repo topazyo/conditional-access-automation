@@ -1,54 +1,26 @@
 # Conditional Access Automation Architecture
 
-This document outlines the architectural decisions and implementation details for the Conditional Access Automation framework.
+This document describes the high-level architecture and the source files that implement each responsibility. The implementation is PowerShell-based and organized under `src/modules/`.
 
-## Core Components
+## Core Components (implemented)
 
-### Policy Management Module
-- Handles policy creation, updates, and deletion
-- Implements risk assessment logic
-- Manages policy dependencies and conflicts
+- Policy Management: `src/modules/policy-management/policy_manager.ps1` — manages policy creation, update, and deletion via Microsoft Graph or offline/test fallbacks.
+- Validation: `src/modules/validation/policy_validator.ps1` — validation rules and conflict detection utilities.
+- Compliance: `src/modules/compliance/compliance_manager.ps1` — compliance assessments and report generation.
+- Risk: `src/modules/risk/risk_assessor.ps1` — scoring functions to quantify policy risk.
+- Reporting: `src/modules/reporting/policy_monitor.ps1` — hooks for Log Analytics and monitoring (some functions are placeholders).
 
-### Compliance Module
-- Tracks compliance requirements
-- Generates compliance reports
-- Maintains audit trails
+## Security Considerations (practical)
 
-### Reporting Module
-- Generates operational metrics
-- Tracks policy effectiveness
-- Provides business impact analysis
-
-## Security Considerations
-
-1. Authentication
-   - Uses Microsoft Graph API with least-privilege access
-   - Implements certificate-based authentication
-   - Supports managed identities
-
-2. Authorization
-   - Role-based access control for policy management
-   - Audit logging for all operations
-   - Separation of duties enforcement
-
-3. Data Protection
-   - Secure storage of configurations
-   - Encryption of sensitive data
-   - Secure logging practices
+- Authentication: code assumes Microsoft Graph cmdlets and supports both interactive login and service principal authentication. The repo does not currently include automated service principal creation scripts (see TODOs).
+- Authorization: rely on Azure/Entra roles and least-privilege service principals for CI/deployment.
+- Audit & Logging: modules attempt to surface audit-friendly outputs; integrate with your SIEM/Log Analytics for production use.
 
 ## Implementation Guidelines
 
-1. Policy Development
-   - Follow least-privilege principle
-   - Implement gradual rollout capability
-   - Include rollback procedures
+- Policy changes should be covered by Pester unit tests and, where feasible, integration tests under `tests/`.
+- Use `-WhatIf` or dry-run modes in `scripts/deployment/deploy.ps1` when testing changes against live tenants.
 
-2. Testing Requirements
-   - Unit tests for all core functions
-   - Integration tests for policy deployment
-   - Performance testing for large-scale deployments
-
-3. Monitoring and Alerting
-   - Real-time policy deployment monitoring
-   - Alert on policy conflicts
-   - Track policy effectiveness metrics
+TODOs
+- Provide scripted helpers in `scripts/setup/` to create service principals and configure Log Analytics.
+- Expand `src/modules/reporting/policy_monitor.ps1` to implement `ConfigureLogAnalytics` and end-to-end ingestion.
